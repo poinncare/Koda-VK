@@ -1,6 +1,8 @@
 package com.ivor.ivormusic.ui.vk
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -112,6 +114,11 @@ fun VkMusicScreen(
 ) {
     val context = LocalContext.current
     val viewModel: VkMusicViewModel = viewModel { VkMusicViewModel(context.applicationContext) }
+    val authLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        VkAuthActivity.sessionFrom(result.data)?.let { session ->
+            viewModel.signIn(session.cookieP, session.remixSid)
+        }
+    }
     val signedIn by viewModel.signedIn.collectAsState()
     val catalog by viewModel.catalog.collectAsState()
     val search by viewModel.search.collectAsState()
@@ -125,7 +132,6 @@ fun VkMusicScreen(
     val progress by playerViewModel.progress.collectAsState()
     val duration by playerViewModel.duration.collectAsState()
     var tab by remember { mutableStateOf(VkTab.HOME) }
-    var authOpen by remember { mutableStateOf(false) }
     var playerExpanded by remember { mutableStateOf(false) }
     var selectedSong by remember { mutableStateOf<Song?>(null) }
     var createPlaylist by remember { mutableStateOf(false) }
@@ -143,14 +149,16 @@ fun VkMusicScreen(
         Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             bottomBar = {
-                NavigationBar(modifier = Modifier.navigationBarsPadding()) {
-                    VkTab.entries.forEach { item ->
-                        NavigationBarItem(
-                            selected = tab == item,
-                            onClick = { viewModel.closePlaylist(); tab = item },
-                            icon = { Icon(item.icon, contentDescription = null) },
-                            label = { Text(item.label) },
-                        )
+                if (signedIn) {
+                    NavigationBar(modifier = Modifier.navigationBarsPadding()) {
+                        VkTab.entries.forEach { item ->
+                            NavigationBarItem(
+                                selected = tab == item,
+                                onClick = { viewModel.closePlaylist(); tab = item },
+                                icon = { Icon(item.icon, contentDescription = null) },
+                                label = { Text(item.label) },
+                            )
+                        }
                     }
                 }
             },
@@ -168,7 +176,7 @@ fun VkMusicScreen(
                     VkTab.HOME -> VkHome(
                         state = catalog,
                         signedIn = signedIn,
-                        onSignIn = { authOpen = true },
+                        onSignIn = { authLauncher.launch(VkAuthActivity.createIntent(context)) },
                         onRefresh = viewModel::refresh,
                         onPlay = playerViewModel::playSong,
                         onPlayAll = playerViewModel::playQueue,
@@ -182,7 +190,7 @@ fun VkMusicScreen(
                         signedIn = signedIn,
                         playlists = (catalog as? VkLoadState.Ready)?.value?.playlists.orEmpty(),
                         onQuery = viewModel::setQuery,
-                        onSignIn = { authOpen = true },
+                        onSignIn = { authLauncher.launch(VkAuthActivity.createIntent(context)) },
                         onPlay = playerViewModel::playSong,
                         onPlayAll = playerViewModel::playQueue,
                         onPlaylist = viewModel::openPlaylist,
@@ -192,7 +200,7 @@ fun VkMusicScreen(
                     VkTab.LIBRARY -> VkLibrary(
                         state = catalog,
                         signedIn = signedIn,
-                        onSignIn = { authOpen = true },
+                        onSignIn = { authLauncher.launch(VkAuthActivity.createIntent(context)) },
                         onSignOut = viewModel::signOut,
                         onPlay = playerViewModel::playSong,
                         onPlayAll = playerViewModel::playQueue,
@@ -235,12 +243,6 @@ fun VkMusicScreen(
         )
     }
 
-    if (authOpen) {
-        VkAuthDialog(
-            onDismiss = { authOpen = false },
-            onSession = viewModel::signIn,
-        )
-    }
     selectedSong?.let { song ->
         SongActionsDialog(
             song = song,

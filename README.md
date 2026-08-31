@@ -1,63 +1,63 @@
 <p align="center">
-  <img src="icon.svg" width="112" alt="Koda VK logo" />
+  <img src="icon.svg" width="112" alt="Логотип Koda VK" />
 </p>
 
 <h1 align="center">Koda VK</h1>
 
-<p align="center"><b>VK Music in the expressive Koda player.</b></p>
+<p align="center"><b>Музыка ВКонтакте в выразительном плеере Koda.</b></p>
 
 <p align="center">
-  <a href="https://github.com/poinncare/Koda-VK/releases/latest"><img src="https://img.shields.io/github/v/release/poinncare/Koda-VK?style=for-the-badge&label=Download&color=6750A4" alt="Latest release" /></a>
-  <a href="https://github.com/poinncare/Koda-VK/releases"><img src="https://img.shields.io/github/downloads/poinncare/Koda-VK/total?style=for-the-badge&color=4C6FFF" alt="Downloads" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/poinncare/Koda-VK?style=for-the-badge&color=8B4513" alt="GPL-3.0 license" /></a>
+  <a href="https://github.com/poinncare/Koda-VK/releases/latest"><img src="https://img.shields.io/github/v/release/poinncare/Koda-VK?style=for-the-badge&label=Скачать&color=6750A4" alt="Последняя версия" /></a>
+  <a href="https://github.com/poinncare/Koda-VK/releases"><img src="https://img.shields.io/github/downloads/poinncare/Koda-VK/total?style=for-the-badge&color=4C6FFF" alt="Количество скачиваний" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/poinncare/Koda-VK?style=for-the-badge&color=8B4513" alt="Лицензия GPL-3.0" /></a>
 </p>
 
-Koda VK is an unofficial Android music player that combines VK Music with Koda's Material 3 Expressive interface. VK is the only online music source exposed by this fork: recommendations, search, the user's library and playlists live in one native interface and play through Koda's queue and background audio service.
+Koda VK — неофициальный музыкальный плеер для Android, объединяющий музыку ВКонтакте с интерфейсом Koda в стиле Material 3 Expressive. В этой версии ВКонтакте является единственным доступным онлайн-источником: рекомендации, поиск, медиатека и плейлисты собраны в одном нативном интерфейсе и воспроизводятся через очередь Koda и фоновый аудиосервис.
 
-## Download
+## Скачать
 
-Download the current APK from **[GitHub Releases](https://github.com/poinncare/Koda-VK/releases/latest)**. Android 11 or newer is required.
+Скачайте актуальный APK в разделе **[GitHub Releases](https://github.com/poinncare/Koda-VK/releases/latest)**. Требуется Android 11 или новее.
 
-Choose `arm64-v8a` for almost every modern phone. Use `armeabi-v7a` for an older 32-bit device or `universal` when you are unsure.
+Для почти всех современных телефонов выбирайте `arm64-v8a`. Версия `armeabi-v7a` предназначена для старых 32-битных устройств, а `universal` подойдёт, если вы не уверены в архитектуре своего устройства.
 
-## Features
+## Возможности
 
-- VK sign-in inside a dedicated browser dialog; the resulting session is encrypted on the device.
-- Personal VK Music sections and recommendations.
-- Search for tracks, with artist and album views derived from live VK results.
-- VK library, liked tracks and playlists.
-- Create and delete playlists, add tracks to editable playlists.
-- Save or remove tracks from My music.
-- Play next, add to queue, shuffle and repeat.
-- Koda's background playback, notification, lock-screen controls and eight player styles.
-- Dynamic color, light/dark themes, responsive loading, empty and error states.
-- Direct HLS playback with automatic URL re-resolution when a VK stream expires.
+- Вход во ВКонтакте на отдельном защищённом экране; полученная сессия хранится на устройстве в зашифрованном виде.
+- Персональные разделы и рекомендации музыки ВКонтакте.
+- Поиск треков, исполнителей и альбомов по актуальным данным ВКонтакте.
+- Медиатека ВКонтакте, понравившиеся треки и плейлисты.
+- Создание и удаление плейлистов, добавление треков в редактируемые плейлисты.
+- Добавление треков в «Мою музыку» и удаление из неё.
+- Воспроизведение следующим, добавление в очередь, перемешивание и повтор.
+- Фоновое воспроизведение Koda, уведомление, управление с экрана блокировки и восемь стилей плеера.
+- Динамические цвета, светлая и тёмная темы, состояния загрузки, пустого результата и ошибки.
+- Прямое воспроизведение HLS с автоматическим повторным получением ссылки после истечения срока действия потока ВКонтакте.
 
-## Privacy and account security
+## Конфиденциальность и безопасность аккаунта
 
-Koda VK does not contain an access token, password or private API key. Authentication happens on VK's site. Session cookies and the short-lived access token are stored with Android encrypted preferences and are removed when you sign out.
+Koda VK не содержит токен доступа, пароль или закрытый API-ключ. Авторизация выполняется на странице ВКонтакте. Cookie сессии и краткосрочный токен доступа сохраняются в зашифрованных настройках Android и удаляются при выходе из аккаунта.
 
-This is an unofficial client and is not affiliated with, endorsed by or sponsored by VK. VK may change or restrict its private music endpoints at any time. Use the app in accordance with the rules that apply to your account and region.
+Это неофициальный клиент, не связанный с ВКонтакте, не одобренный и не спонсируемый компанией. ВКонтакте может в любое время изменить или ограничить свои закрытые музыкальные API. Используйте приложение в соответствии с правилами, действующими для вашего аккаунта и региона.
 
-## Building
+## Сборка
 
-Install Android SDK Platform 37 and JDK 17, then run:
+Установите Android SDK Platform 37 и JDK 17, затем выполните:
 
 ```bash
 ./gradlew assembleDebug
 ```
 
-Release builds read signing values from `local.properties` or the `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD` environment variables. The signing keystore itself is intentionally not stored in Git.
+Для release-сборок параметры подписи берутся из `local.properties` или переменных окружения `KEYSTORE_PASSWORD`, `KEY_ALIAS` и `KEY_PASSWORD`. Сам файл хранилища ключей намеренно не добавляется в Git.
 
-## Project structure
+## Структура проекта
 
-- `data/vk/` — native VK auth, API mapping and encrypted session storage.
-- `ui/vk/` — Koda-styled home, search, library, playlist and sign-in surfaces.
-- `service/MusicService.kt` — shared Media3 playback and stream refresh.
-- `ui/player/` — Koda player styles, queue and playback controls.
+- `data/vk/` — нативная авторизация ВКонтакте, преобразование данных API и зашифрованное хранение сессии.
+- `ui/vk/` — оформленные в стиле Koda экраны главной, поиска, медиатеки, плейлистов и входа.
+- `service/MusicService.kt` — общий сервис Media3 для воспроизведения и обновления ссылок на потоки.
+- `ui/player/` — стили плеера Koda, очередь и управление воспроизведением.
 
-## Credits and licenses
+## Авторы и лицензии
 
-Koda VK is based on [Koda](https://github.com/Ivorisnoob/Koda) and uses a native Android port of the protocol surface documented by [@toil/vk-audio](https://github.com/ilyhalight/vk-audio). Koda is GPL-3.0; `vk-audio` is MIT. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Koda VK основан на проекте [Koda](https://github.com/Ivorisnoob/Koda) и использует нативный Android-порт протокола, описанного в [@toil/vk-audio](https://github.com/ilyhalight/vk-audio). Koda распространяется по лицензии GPL-3.0, а `vk-audio` — по лицензии MIT. Подробности приведены в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The complete application is distributed under [GPL-3.0](LICENSE).
+Приложение целиком распространяется по лицензии [GPL-3.0](LICENSE).
