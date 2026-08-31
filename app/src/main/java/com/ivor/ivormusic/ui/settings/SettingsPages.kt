@@ -111,46 +111,22 @@ import com.ivor.ivormusic.ui.theme.ThemeMode
 @Composable
 internal fun AccountSettingsPage(
     isLoggedIn: Boolean,
-    accountRefreshKey: Int,
-    sessionManager: SessionManager,
-    saveVideoHistory: Boolean,
-    onSaveVideoHistoryToggle: (Boolean) -> Unit,
+    error: String?,
     onShowAuthDialog: () -> Unit,
-    onShowCookieSheet: () -> Unit,
     onSignOut: () -> Unit,
     onBack: () -> Unit
 ) {
     SettingsDetailScaffold(title = stringResource(R.string.settings_account), onBack = onBack) {
         if (isLoggedIn) {
             item {
-                SettingsSection(title = stringResource(R.string.settings_section_youtube_music)) {
+                SettingsSection(title = "VK MUSIC") {
                     SettingsCard {
-                        key(accountRefreshKey) {
-                            ExpressiveAccountItem(
-                                sessionManager = sessionManager,
-                                textColor = MaterialTheme.colorScheme.onBackground,
-                                secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        SettingsDivider()
-                        SettingsToggleRow(
-                            icon = Icons.Rounded.CheckCircle,
-                            title = stringResource(R.string.sp_save_watch_history),
-                            subtitle = if (saveVideoHistory) {
-                                "Videos you watch are added to your YouTube history"
-                            } else {
-                                "Watching does not touch your YouTube history"
-                            },
-                            enabled = saveVideoHistory,
-                            onToggle = onSaveVideoHistoryToggle
-                        )
-                        SettingsDivider()
                         SettingsRow(
-                            icon = Icons.Rounded.Cookie,
-                            title = stringResource(R.string.sp_replace_session_cookies),
-                            subtitle = stringResource(R.string.sp_replace_session_cookies_sub),
-                            onClick = onShowCookieSheet,
-                            showChevron = true
+                            icon = Icons.Rounded.CheckCircle,
+                            title = "VK Music",
+                            subtitle = "Account connected. Recommendations and library are synchronized.",
+                            onClick = {},
+                            showChevron = false
                         )
                     }
                 }
@@ -161,7 +137,7 @@ internal fun AccountSettingsPage(
                     SettingsRow(
                         icon = Icons.AutoMirrored.Rounded.Logout,
                         title = stringResource(R.string.sign_out),
-                        subtitle = stringResource(R.string.sp_sign_out_sub),
+                        subtitle = "Disconnect your VK Music account",
                         onClick = onSignOut,
                         tint = SettingsRowDefaults.destructiveTint,
                         titleColor = SettingsRowDefaults.destructiveTint
@@ -174,26 +150,18 @@ internal fun AccountSettingsPage(
             item {
                 SettingsNotice(
                     icon = Icons.Rounded.Info,
-                    text = stringResource(R.string.sp_signed_out_info),
+                    text = error ?: "Sign in to load VK Mix, your music and playlists.",
                 )
             }
 
             item {
-                SettingsSection(title = stringResource(R.string.settings_section_youtube_music)) {
+                SettingsSection(title = "VK MUSIC") {
                     SettingsCard {
                         SettingsRow(
                             icon = Icons.Rounded.MusicNote,
-                            title = stringResource(R.string.sp_connect_youtube_music),
-                            subtitle = stringResource(R.string.sp_connect_youtube_music_sub),
+                            title = "Connect VK Music",
+                            subtitle = "Sign in to access recommendations, playlists and liked tracks",
                             onClick = onShowAuthDialog,
-                            showChevron = true
-                        )
-                        SettingsDivider()
-                        SettingsRow(
-                            icon = Icons.Rounded.Cookie,
-                            title = stringResource(R.string.sp_sign_in_cookies),
-                            subtitle = stringResource(R.string.sp_sign_in_cookies_sub),
-                            onClick = onShowCookieSheet,
                             showChevron = true
                         )
                     }

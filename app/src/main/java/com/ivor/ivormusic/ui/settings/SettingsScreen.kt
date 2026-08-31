@@ -182,9 +182,13 @@ import com.ivor.ivormusic.data.SegmentAction
 import com.ivor.ivormusic.data.SponsorCategory
 import androidx.compose.material.icons.rounded.MoneyOff
 import androidx.compose.ui.res.pluralStringResource
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import kotlin.math.roundToInt
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeAuthUtils
+import com.ivor.ivormusic.data.vk.VkMusicRepository
+import com.ivor.ivormusic.ui.vk.VkAuthActivity
 
 import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
 import com.ivor.ivormusic.ui.components.coveredBy
@@ -363,6 +367,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val sessionManager = remember { SessionManager(context) }
+    val vkRepository = remember { VkMusicRepository(context.applicationContext) }
     val coroutineScope = rememberCoroutineScope()
 
     // The upload-notification channel list reads the stores directly (no DI
@@ -377,7 +382,23 @@ fun SettingsScreen(
     val mutedChannelIds by uploadCheckRepository.mutedChannelIds.collectAsState()
 
     // Check actual login status
-    var isLoggedIn by remember { mutableStateOf(sessionManager.isLoggedIn()) }
+    var isLoggedIn by remember { mutableStateOf(vkRepository.isSignedIn) }
+    var vkAuthError by remember { mutableStateOf<String?>(null) }
+    val vkAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        VkAuthActivity.sessionFrom(result.data)?.let { session ->
+            coroutineScope.launch {
+                try {
+                    vkRepository.signIn(session.cookieP, session.remixSid)
+                    isLoggedIn = true
+                    vkAuthError = null
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    vkAuthError = error.message ?: "VK sign-in failed"
+                }
+            }
+        }
+    }
 
     // Whether the OS currently lets Koda post promoted (Live Update)
     // notifications. Re-read on resume, because the only way to change it is to
@@ -506,15 +527,6 @@ fun SettingsScreen(
         }
     }
 
-    // Dialog state for YouTube auth
-    var showAuthDialog by remember { mutableStateOf(false) }
-
-    // Dialog state for pasting a session cookie header by hand
-    var showCookiePasteSheet by remember { mutableStateOf(false) }
-    // Bumped after a session change so the account row re-reads name/avatar,
-    // which SessionManager exposes as plain getters rather than a flow.
-    var accountRefreshKey by remember { mutableStateOf(0) }
-
     // Dialog state for About
     var showAboutDialog by remember { mutableStateOf(false) }
 
@@ -602,8 +614,6 @@ fun SettingsScreen(
                 onSearchQueryChange = { searchQuery = it },
                 searchEntries = searchEntries,
                 isLoggedIn = isLoggedIn,
-                accountRefreshKey = accountRefreshKey,
-                sessionManager = sessionManager,
                 currentThemeMode = currentThemeMode,
                 colorPalette = colorPalette,
                 spotlightHome = spotlightHome,
@@ -699,16 +709,11 @@ fun SettingsScreen(
 
                     SettingsPage.ACCOUNT -> AccountSettingsPage(
                     isLoggedIn = isLoggedIn,
-                    accountRefreshKey = accountRefreshKey,
-                    sessionManager = sessionManager,
-                    saveVideoHistory = saveVideoHistory,
-                    onSaveVideoHistoryToggle = onSaveVideoHistoryToggle,
-                    onShowAuthDialog = { showAuthDialog = true },
-                    onShowCookieSheet = { showCookiePasteSheet = true },
+                    error = vkAuthError,
+                    onShowAuthDialog = { vkAuthLauncher.launch(VkAuthActivity.createIntent(context)) },
                     onSignOut = {
-                        sessionManager.clearSession()
+                        vkRepository.signOut()
                         isLoggedIn = false
-                        onLogoutClick()
                     },
                     onBack = { page = SettingsPage.HUB }
                 )
@@ -870,36 +875,6 @@ fun SettingsScreen(
         }
     }
 
-    // YouTube Auth Dialog
-    if (showAuthDialog) {
-        YouTubeAuthDialog(
-            onDismiss = { showAuthDialog = false },
-            onAuthSuccess = {
-                showAuthDialog = false
-                isLoggedIn = true
-            }
-        )
-    }
-
-    // Manual cookie paste (escape hatch when the WebView login fails, or to
-    // refresh a session that has gone stale without signing in again)
-    if (showCookiePasteSheet) {
-        CookiePasteSheet(
-            onDismiss = { showCookiePasteSheet = false },
-            onSave = { cookies ->
-                sessionManager.startSession(cookies)
-                isLoggedIn = true
-                showCookiePasteSheet = false
-                coroutineScope.launch {
-                    // Populates name/avatar for the account row, and doubles as
-                    // a live check that the pasted session is actually accepted.
-                    com.ivor.ivormusic.data.YouTubeRepository(context).fetchAccountInfo()
-                    accountRefreshKey++
-                }
-            }
-        )
-    }
-
     // About Dialog with expressive styling
     if (showAboutDialog) {
         ExpressiveAboutDialog(
@@ -994,8 +969,6 @@ private fun SettingsHub(
     onSearchQueryChange: (String) -> Unit,
     searchEntries: List<SettingsSearchEntry>,
     isLoggedIn: Boolean,
-    accountRefreshKey: Int,
-    sessionManager: SessionManager,
     currentThemeMode: ThemeMode,
     colorPalette: String,
     spotlightHome: Boolean,
@@ -1031,12 +1004,7 @@ private fun SettingsHub(
     // Opening a result should put the keyboard away before the page slides in.
     val focusManager = LocalFocusManager.current
 
-    val accountValue = key(accountRefreshKey) {
-        when {
-            !isLoggedIn -> "Not signed in"
-            else -> sessionManager.getUserName() ?: "Signed in"
-        }
-    }
+    val accountValue = if (isLoggedIn) "VK Music connected" else "Not signed in"
 
     val themeLabel = when (currentThemeMode) {
         ThemeMode.SYSTEM -> "System"

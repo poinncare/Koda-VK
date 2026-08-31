@@ -3,6 +3,18 @@ package com.ivor.ivormusic.ui.vk
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -16,7 +28,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +62,12 @@ import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -55,9 +77,13 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
@@ -73,10 +99,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -84,6 +112,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
@@ -96,14 +125,15 @@ import com.ivor.ivormusic.data.vk.VkPlaylistDetails
 import com.ivor.ivormusic.ui.player.ExpandablePlayer
 import com.ivor.ivormusic.ui.player.PlayerViewModel
 
-private enum class VkTab(val label: String, val icon: ImageVector) {
-    HOME("Home", Icons.Rounded.Home),
-    SEARCH("Search", Icons.Rounded.Search),
-    LIBRARY("Library", Icons.Rounded.LibraryMusic),
+private enum class VkTab(val label: String, val selectedIcon: ImageVector, val icon: ImageVector) {
+    HOME("Home", Icons.Rounded.Home, Icons.Outlined.Home),
+    SEARCH("Search", Icons.Rounded.Search, Icons.Outlined.Search),
+    LIBRARY("Library", Icons.Rounded.LibraryMusic, Icons.Outlined.LibraryMusic),
 }
 
 private enum class SearchKind(val label: String) { TRACKS("Tracks"), ARTISTS("Artists"), ALBUMS("Albums"), PLAYLISTS("Playlists") }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun VkMusicScreen(
     playerViewModel: PlayerViewModel,
@@ -111,6 +141,10 @@ fun VkMusicScreen(
     artworkColors: Boolean,
     playerStyle: PlayerStyle,
     onPlayerStyleChange: (PlayerStyle) -> Unit,
+    isDarkMode: Boolean = true,
+    nonExpressiveNavigationBar: Boolean = false,
+    onNavigateToSettings: () -> Unit = {},
+    onNavigateToDownloads: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val viewModel: VkMusicViewModel = viewModel { VkMusicViewModel(context.applicationContext) }
@@ -131,7 +165,7 @@ fun VkMusicScreen(
     val playWhenReady by playerViewModel.playWhenReady.collectAsState()
     val progress by playerViewModel.progress.collectAsState()
     val duration by playerViewModel.duration.collectAsState()
-    var tab by remember { mutableStateOf(VkTab.HOME) }
+    var tab by rememberSaveable { mutableStateOf(VkTab.HOME) }
     var playerExpanded by remember { mutableStateOf(false) }
     var selectedSong by remember { mutableStateOf<Song?>(null) }
     var createPlaylist by remember { mutableStateOf(false) }
@@ -143,36 +177,31 @@ fun VkMusicScreen(
             viewModel.consumeMessage()
         }
     }
-    BackHandler(enabled = playlist != null) { viewModel.closePlaylist() }
+    BackHandler(enabled = playlist != null || tab != VkTab.HOME) {
+        if (playlist != null) viewModel.closePlaylist() else tab = VkTab.HOME
+    }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbar) },
-            bottomBar = {
-                if (signedIn) {
-                    NavigationBar(modifier = Modifier.navigationBarsPadding()) {
-                        VkTab.entries.forEach { item ->
-                            NavigationBarItem(
-                                selected = tab == item,
-                                onClick = { viewModel.closePlaylist(); tab = item },
-                                icon = { Icon(item.icon, contentDescription = null) },
-                                label = { Text(item.label) },
-                            )
-                        }
-                    }
+        val statusInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val bottomOverlay = if (currentSong != null) 188.dp else 100.dp
+        val contentModifier = Modifier.fillMaxSize()
+        AnimatedContent(
+            targetState = playlist to tab,
+            label = "VkKodaNavigation",
+            transitionSpec = {
+                val forward = targetState.second.ordinal >= initialState.second.ordinal
+                if (forward) {
+                    (slideInHorizontally { it } + fadeIn()) togetherWith
+                        (slideOutHorizontally { -it / 3 } + fadeOut())
+                } else {
+                    (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith
+                        (slideOutHorizontally { it } + fadeOut())
                 }
             },
-            floatingActionButton = {
-                if (tab == VkTab.LIBRARY && playlist == null && signedIn) {
-                    FloatingActionButton(onClick = { createPlaylist = true }) {
-                        Icon(Icons.Rounded.Add, contentDescription = "Create playlist")
-                    }
-                }
-            },
-        ) { padding ->
-            val contentModifier = Modifier.fillMaxSize().padding(padding).padding(bottom = if (currentSong != null) 88.dp else 0.dp)
-            when (val opened = playlist) {
-                null -> when (tab) {
+        ) { (opened, targetTab) ->
+            when (opened) {
+                null -> when (targetTab) {
                     VkTab.HOME -> VkHome(
                         state = catalog,
                         signedIn = signedIn,
@@ -183,6 +212,10 @@ fun VkMusicScreen(
                         onPlaylist = viewModel::openPlaylist,
                         onLongPress = { selectedSong = it },
                         modifier = contentModifier,
+                        contentPadding = PaddingValues(top = statusInset, bottom = bottomOverlay + navInset),
+                        onSettings = onNavigateToSettings,
+                        onDownloads = onNavigateToDownloads,
+                        isDarkMode = isDarkMode,
                     )
                     VkTab.SEARCH -> VkSearch(
                         state = search,
@@ -195,7 +228,7 @@ fun VkMusicScreen(
                         onPlayAll = playerViewModel::playQueue,
                         onPlaylist = viewModel::openPlaylist,
                         onLongPress = { selectedSong = it },
-                        modifier = contentModifier,
+                        modifier = contentModifier.padding(top = statusInset, bottom = bottomOverlay + navInset),
                     )
                     VkTab.LIBRARY -> VkLibrary(
                         state = catalog,
@@ -207,6 +240,7 @@ fun VkMusicScreen(
                         onPlaylist = viewModel::openPlaylist,
                         onLongPress = { selectedSong = it },
                         modifier = contentModifier,
+                        contentPadding = PaddingValues(start = 16.dp, top = statusInset + 12.dp, end = 16.dp, bottom = bottomOverlay + navInset),
                     )
                 }
                 is VkLoadState.Loading -> LoadingState(contentModifier)
@@ -218,10 +252,65 @@ fun VkMusicScreen(
                     onPlayAll = playerViewModel::playQueue,
                     onLongPress = { selectedSong = it },
                     onDelete = if (opened.value.playlist.canEdit) ({ viewModel.deletePlaylist(opened.value.playlist) }) else null,
-                    modifier = contentModifier,
+                    modifier = contentModifier.padding(top = statusInset, bottom = bottomOverlay + navInset),
                 )
             }
         }
+
+        if (tab == VkTab.LIBRARY && playlist == null && signedIn) {
+            FloatingActionButton(
+                onClick = { createPlaylist = true },
+                modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding()
+                    .padding(end = 24.dp, bottom = bottomOverlay + 12.dp),
+            ) { Icon(Icons.Rounded.Add, contentDescription = "Create playlist") }
+        }
+
+        if (nonExpressiveNavigationBar) {
+            NavigationBar(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                VkTab.entries.forEach { item ->
+                    val selected = tab == item
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { viewModel.closePlaylist(); tab = item },
+                        icon = { Icon(if (selected) item.selectedIcon else item.icon, item.label) },
+                        label = { Text(item.label) },
+                    )
+                }
+            }
+        } else {
+            HorizontalFloatingToolbar(
+                expanded = true,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 20.dp),
+            ) {
+                VkTab.entries.forEach { item ->
+                    val selected = tab == item
+                    Surface(
+                        selected = selected,
+                        onClick = { viewModel.closePlaylist(); tab = item },
+                        shape = CircleShape,
+                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.height(48.dp),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = if (selected) 20.dp else 12.dp).animateContentSize(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(if (selected) item.selectedIcon else item.icon, item.label, Modifier.size(24.dp))
+                            AnimatedVisibility(selected) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(item.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        SnackbarHost(snackbar, Modifier.align(Alignment.TopCenter).padding(top = statusInset))
 
         ExpandablePlayer(
             isExpanded = playerExpanded,
@@ -239,7 +328,8 @@ fun VkMusicScreen(
             artworkColors = artworkColors,
             playerStyle = playerStyle,
             onPlayerStyleChange = onPlayerStyleChange,
-            collapsedBottomSpacing = 92.dp,
+            collapsedBottomSpacing = if (nonExpressiveNavigationBar) 96.dp else 100.dp,
+            modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
 
@@ -276,38 +366,221 @@ private fun VkHome(
     onPlaylist: (VkPlaylist) -> Unit,
     onLongPress: (Song) -> Unit,
     modifier: Modifier,
+    contentPadding: PaddingValues,
+    onSettings: () -> Unit,
+    onDownloads: () -> Unit,
+    isDarkMode: Boolean,
 ) {
+    var showMixSettings by rememberSaveable { mutableStateOf(false) }
+    var moods by rememberSaveable { mutableStateOf("Any") }
+    var familiarity by rememberSaveable { mutableStateOf("Any") }
+    var language by rememberSaveable { mutableStateOf("Any") }
     when {
         !signedIn -> SignedOutState(onSignIn, modifier)
         state is VkLoadState.Loading -> LoadingState(modifier)
         state is VkLoadState.Error -> ErrorState(state.message, onRefresh, modifier)
-        state is VkLoadState.Ready -> LazyColumn(
-            modifier = modifier,
-            contentPadding = PaddingValues(vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Koda VK", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                        Text("Your VK Music, in Koda's player", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        state is VkLoadState.Ready -> {
+            val sourceMix = state.value.sections.firstOrNull { section ->
+                section.title.contains("mix", ignoreCase = true) || section.title.contains("микс", ignoreCase = true)
+            }?.songs.orEmpty().ifEmpty { state.value.sections.firstOrNull { it.songs.isNotEmpty() }?.songs.orEmpty() }
+            val mixSongs = remember(sourceMix, moods, familiarity, language) {
+                applyMixSettings(sourceMix, moods, familiarity, language)
+            }
+            LazyColumn(
+                modifier = modifier,
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                item {
+                    VkTopBar(
+                        onProfile = onSignIn,
+                        onDownloads = onDownloads,
+                        onSettings = onSettings,
+                        onRefresh = onRefresh,
+                    )
+                }
+                item {
+                    VkMixHero(
+                        songs = mixSongs,
+                        onPlay = { onPlayAll(mixSongs) },
+                        onSettings = { showMixSettings = true },
+                    )
+                }
+                if (mixSongs.isNotEmpty()) item {
+                    com.ivor.ivormusic.ui.home.OrganicSongLayout(
+                        songs = mixSongs,
+                        onSongClick = onPlay,
+                        onSongLongPress = onLongPress,
+                    )
+                }
+                if (state.value.sections.isEmpty()) {
+                    item { EmptyState("VK did not return music yet", "Pull again or check the account's music library.") }
+                }
+                state.value.sections.forEach { section ->
+                    if (section.songs.isNotEmpty() && section.songs != sourceMix) item {
+                        SongShelf(section.title, section.songs, onPlay, onPlayAll, onLongPress)
                     }
-                    IconButton(onClick = onRefresh) { Icon(Icons.Rounded.Refresh, contentDescription = "Refresh") }
+                    if (section.playlists.isNotEmpty()) item {
+                        PlaylistShelf(section.title, section.playlists, onPlaylist)
+                    }
                 }
+                item { Spacer(Modifier.height(24.dp)) }
             }
-            if (state.value.sections.isEmpty()) {
-                item { EmptyState("VK did not return music yet", "Pull again or check the account's music library.") }
-            }
-            state.value.sections.forEach { section ->
-                if (section.songs.isNotEmpty()) item {
-                    SongShelf(section.title, section.songs, onPlay, onPlayAll, onLongPress)
+        }
+    }
+
+    if (showMixSettings) {
+        VkMixSettingsSheet(
+            moods = moods,
+            familiarity = familiarity,
+            language = language,
+            onMoodsChange = { moods = it },
+            onFamiliarityChange = { familiarity = it },
+            onLanguageChange = { language = it },
+            onDismiss = { showMixSettings = false },
+        )
+    }
+}
+
+@Composable
+private fun VkTopBar(
+    onProfile: () -> Unit,
+    onDownloads: () -> Unit,
+    onSettings: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(onClick = onProfile, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.size(44.dp)) {
+            Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, "VK profile", Modifier.size(26.dp)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            IconButton(onClick = onRefresh, modifier = Modifier.size(44.dp)) { Icon(Icons.Rounded.Refresh, "Refresh") }
+            IconButton(onClick = onDownloads, modifier = Modifier.size(44.dp)) { Icon(Icons.Rounded.Download, "Downloads") }
+            IconButton(onClick = onSettings, modifier = Modifier.size(44.dp)) { Icon(Icons.Rounded.Settings, "Settings") }
+        }
+    }
+}
+
+@Composable
+private fun VkMixHero(songs: List<Song>, onPlay: () -> Unit, onSettings: () -> Unit) {
+    val animation = rememberInfiniteTransition(label = "VkMixArtwork")
+    val rotation by animation.animateFloat(
+        initialValue = -3f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(tween(6000), repeatMode = androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "VkMixRotation",
+    )
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("VK", style = MaterialTheme.typography.displayLarge)
+                    IconButton(onClick = onSettings, modifier = Modifier.padding(start = 8.dp)) {
+                        Icon(Icons.Rounded.Tune, "VK Mix settings")
+                    }
                 }
-                if (section.playlists.isNotEmpty()) item {
-                    PlaylistShelf(section.title, section.playlists, onPlaylist)
+                Text("Mix", style = MaterialTheme.typography.displayLarge)
+                Text(
+                    songs.take(2).joinToString { it.artist }.ifBlank { "Personal recommendations" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(220.dp),
+                )
+            }
+            FilledIconButton(
+                onClick = onPlay,
+                enabled = songs.isNotEmpty(),
+                modifier = Modifier.padding(top = 40.dp).size(88.dp),
+            ) { Icon(Icons.Rounded.PlayArrow, "Play VK Mix", Modifier.size(42.dp)) }
+        }
+        if (songs.isNotEmpty()) {
+            Box(Modifier.fillMaxWidth().height(330.dp).padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Artwork(
+                    songs.first().thumbnailUrl,
+                    Modifier.align(Alignment.Center).size(258.dp).graphicsLayer { rotationZ = rotation }
+                        .clip(RoundedCornerShape(72.dp)),
+                )
+                songs.getOrNull(1)?.let {
+                    Artwork(it.thumbnailUrl, Modifier.align(Alignment.TopStart).size(92.dp).clip(CircleShape))
+                }
+                songs.getOrNull(2)?.let {
+                    Artwork(it.thumbnailUrl, Modifier.align(Alignment.BottomEnd).size(82.dp).clip(CircleShape))
                 }
             }
         }
     }
+}
+
+@Composable
+private fun VkMixSettingsSheet(
+    moods: String,
+    familiarity: String,
+    language: String,
+    onMoodsChange: (String) -> Unit,
+    onFamiliarityChange: (String) -> Unit,
+    onLanguageChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+            Text("VK Mix settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Combine several characteristics to tune your recommendations.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            MixChipGroup("Mood", listOf("Active", "Calm", "Joyful", "Sad", "Love", "Instrumental"), moods.split(',').filter { it.isNotBlank() }.toSet()) { value ->
+                val selected = moods.split(',').filter { it.isNotBlank() && it != "Any" }.toMutableSet()
+                if (!selected.add(value)) selected.remove(value)
+                onMoodsChange(selected.joinToString(",").ifBlank { "Any" })
+            }
+            MixSingleChoice("Familiarity", listOf("Any", "Favorites", "New"), familiarity, onFamiliarityChange)
+            MixSingleChoice("Language", listOf("Any", "Russian", "Other"), language, onLanguageChange)
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) { Text("Apply") }
+        }
+    }
+}
+
+@Composable
+private fun MixChipGroup(title: String, values: List<String>, selected: Set<String>, onToggle: (String) -> Unit) {
+    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(values) { value -> FilterChip(selected = value in selected, onClick = { onToggle(value) }, label = { Text(value) }) }
+    }
+}
+
+@Composable
+private fun MixSingleChoice(title: String, values: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(values) { value -> FilterChip(selected = value == selected, onClick = { onSelect(value) }, label = { Text(value) }) }
+    }
+}
+
+private fun applyMixSettings(source: List<Song>, moods: String, familiarity: String, language: String): List<Song> {
+    if (source.isEmpty()) return source
+    val filtered = source.filter { song ->
+        val familiar = when (familiarity) {
+            "Favorites" -> song.vkLiked
+            "New" -> !song.vkLiked
+            else -> true
+        }
+        val hasCyrillic = (song.title + song.artist).any { it in '\u0400'..'\u04FF' }
+        val matchingLanguage = when (language) {
+            "Russian" -> hasCyrillic
+            "Other" -> !hasCyrillic
+            else -> true
+        }
+        familiar && matchingLanguage
+    }.ifEmpty { source }
+    val offset = (moods.hashCode() and Int.MAX_VALUE) % filtered.size
+    return filtered.drop(offset) + filtered.take(offset)
 }
 
 @Composable
@@ -374,12 +647,13 @@ private fun VkLibrary(
     onPlaylist: (VkPlaylist) -> Unit,
     onLongPress: (Song) -> Unit,
     modifier: Modifier,
+    contentPadding: PaddingValues,
 ) {
     if (!signedIn) return SignedOutState(onSignIn, modifier)
     when (state) {
         is VkLoadState.Loading -> LoadingState(modifier)
         is VkLoadState.Error -> ErrorState(state.message, {}, modifier)
-        is VkLoadState.Ready -> LazyColumn(modifier, contentPadding = PaddingValues(16.dp, 20.dp, 16.dp, 100.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        is VkLoadState.Ready -> LazyColumn(modifier, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Your music", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

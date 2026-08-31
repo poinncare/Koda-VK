@@ -219,17 +219,6 @@ class MainActivity : ComponentActivity() {
                 uiScale = uiScale
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    val vkPlayerViewModel: PlayerViewModel = viewModel {
-                        PlayerViewModel(applicationContext)
-                    }
-                    com.ivor.ivormusic.ui.vk.VkMusicScreen(
-                        playerViewModel = vkPlayerViewModel,
-                        ambientBackground = ambientBackground,
-                        artworkColors = playerArtworkColors,
-                        playerStyle = playerStyle,
-                        onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
-                    )
-                    if (BuildConfig.ENABLE_LEGACY_UI) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
                         isInPipMode = isInPipMode,
@@ -350,7 +339,6 @@ class MainActivity : ComponentActivity() {
                         localOnlyMode = localOnlyMode,
                         onLocalOnlyModeToggle = { themeViewModel.setLocalOnlyMode(it) }
                     )
-                    }
                 }
             }
         }
@@ -769,7 +757,7 @@ fun MusicApp(
     ) {
         NavHost(
             navController = navController,
-            startDestination = "home"
+            startDestination = if (onboardingCompleted) "home" else "onboarding"
         ) {
             composable("onboarding") {
                 OnboardingScreen(
@@ -810,6 +798,10 @@ fun MusicApp(
                     artworkColors = playerArtworkColors,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
+                    isDarkMode = isDarkMode,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                    onNavigateToSettings = { navController.navigate("settings") },
+                    onNavigateToDownloads = { navController.navigate("downloads") },
                 )
             }
             composable(

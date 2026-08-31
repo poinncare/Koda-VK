@@ -412,9 +412,9 @@
     <string name="ob_continue">Continue</string>
     <string name="ob_start_listening">Start listening</string>
     <string name="ob_welcome_title">Welcome to Koda</string>
-    <string name="ob_welcome_body">Music and videos, your local files, and a player that adapts to you. A few quick choices and you are in.</string>
+    <string name="ob_welcome_body">VK Music, your local files, and a player that adapts to you. A few quick choices and you are in.</string>
     <string name="ob_feat_stream_title">Stream anything</string>
-    <string name="ob_feat_stream_sub">Music and videos powered by YouTube Music</string>
+    <string name="ob_feat_stream_sub">Personal recommendations and your library from VK Music</string>
     <string name="ob_feat_local_title">Your local library</string>
     <string name="ob_feat_local_sub">Songs already on this device play right alongside</string>
     <string name="ob_feat_custom_title">Made yours</string>

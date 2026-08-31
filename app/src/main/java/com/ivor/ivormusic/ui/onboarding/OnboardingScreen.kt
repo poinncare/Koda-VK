@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -116,11 +118,12 @@ import com.ivor.ivormusic.data.PlayerStyle
 import com.ivor.ivormusic.ui.components.rememberPermissionState
 import com.ivor.ivormusic.ui.home.HomeStylePicker
 import com.ivor.ivormusic.ui.player.PlayerStylePicker
-import com.ivor.ivormusic.data.SessionManager
-import com.ivor.ivormusic.ui.auth.YouTubeAuthDialog
+import com.ivor.ivormusic.data.vk.VkMusicRepository
+import com.ivor.ivormusic.ui.vk.VkAuthActivity
 import com.ivor.ivormusic.ui.theme.ThemeMode
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 private const val ONBOARDING_PAGE_COUNT = 7
 
@@ -152,9 +155,28 @@ fun OnboardingScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { ONBOARDING_PAGE_COUNT })
-    val sessionManager = remember { SessionManager(context) }
-    var isLoggedIn by remember { mutableStateOf(sessionManager.isLoggedIn()) }
-    var showAuthDialog by remember { mutableStateOf(false) }
+    val vkRepository = remember { VkMusicRepository(context.applicationContext) }
+    var isLoggedIn by remember { mutableStateOf(vkRepository.isSignedIn) }
+    var isSigningIn by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<String?>(null) }
+    val vkAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        VkAuthActivity.sessionFrom(result.data)?.let { session ->
+            scope.launch {
+                isSigningIn = true
+                authError = null
+                try {
+                    vkRepository.signIn(session.cookieP, session.remixSid)
+                    isLoggedIn = true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    authError = error.message ?: "VK sign-in failed"
+                } finally {
+                    isSigningIn = false
+                }
+            }
+        }
+    }
 
     val storagePermissionState = rememberPermissionState(
         permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -167,16 +189,6 @@ fun OnboardingScreen(
         rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS)
     } else {
         null
-    }
-
-    if (showAuthDialog) {
-        YouTubeAuthDialog(
-            onDismiss = { showAuthDialog = false },
-            onAuthSuccess = {
-                isLoggedIn = true
-                showAuthDialog = false
-            }
-        )
     }
 
     val isLastPage = pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1
@@ -275,18 +287,13 @@ fun OnboardingScreen(
                             storagePermissionGranted = storagePermissionState.isGranted,
                             onRequestStoragePermission = { storagePermissionState.launchPermissionRequest() }
                         )
-                        2 -> YouTubePage(
+                        2 -> VkPage(
                             isLoggedIn = isLoggedIn,
-                            onConnectYouTube = { showAuthDialog = true }
+                            isSigningIn = isSigningIn,
+                            error = authError,
+                            onConnectVk = { vkAuthLauncher.launch(VkAuthActivity.createIntent(context)) }
                         )
-                        3 -> VideoModePage(
-                            videoMode = videoMode,
-                            shortsEnabled = shortsEnabled,
-                            onShortsEnabledToggle = onShortsEnabledToggle,
-                            onVideoModeToggle = onVideoModeToggle,
-                            homeModeToggleEnabled = homeModeToggleEnabled,
-                            onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange
-                        )
+                        3 -> VkMixPage()
                         4 -> LookAndFeelPage(
                             currentThemeMode = currentThemeMode,
                             onThemeModeChange = onThemeModeChange,
@@ -502,15 +509,17 @@ private fun LibraryPage(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun YouTubePage(
+private fun VkPage(
     isLoggedIn: Boolean,
-    onConnectYouTube: () -> Unit
+    isSigningIn: Boolean,
+    error: String?,
+    onConnectVk: () -> Unit
 ) {
     OnboardingPageScaffold(
         icon = Icons.Rounded.CloudSync,
         iconShape = MaterialShapes.Flower,
-        title = stringResource(R.string.settings_section_youtube_music),
-        body = stringResource(R.string.ob_page_ytmusic_body)
+        title = "VK Music",
+        body = "Connect VK for personalized recommendations, your music and playlists."
     ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
@@ -553,7 +562,7 @@ private fun YouTubePage(
                             text = if (isLoggedIn) {
                                 stringResource(R.string.ob_recs_ready)
                             } else {
-                                stringResource(R.string.ob_optional_sign_in_later)
+                                "Connect now or later from the profile button on Home."
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -563,19 +572,36 @@ private fun YouTubePage(
 
                 if (!isLoggedIn) {
                     Button(
-                        onClick = onConnectYouTube,
+                        onClick = onConnectVk,
+                        enabled = !isSigningIn,
                         shapes = ButtonDefaults.shapes(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
                     ) {
-                        Text(stringResource(R.string.sp_connect_youtube_music))
+                        Text(if (isSigningIn) "Connecting…" else "Connect VK Music")
                     }
                 }
             }
         }
 
+        error?.let { HintText(it) }
         HintText(stringResource(R.string.ob_hint_session_secure))
+    }
+}
+
+@Composable
+private fun VkMixPage() {
+    OnboardingPageScaffold(
+        icon = Icons.Rounded.GraphicEq,
+        iconShape = MaterialShapes.Arch,
+        title = "VK Mix in Koda",
+        body = "Personal recommendations keep Koda's original Home and player design."
+    ) {
+        FeatureRow(Icons.Rounded.Tune, MaterialShapes.Flower, "Tune your mix", "Choose mood, familiarity and language")
+        FeatureRow(Icons.Rounded.Bolt, MaterialShapes.Circle, "Personal flow", "VK recommendations form an endless listening queue")
+        FeatureRow(Icons.Rounded.Palette, MaterialShapes.SoftBurst, "Koda interface", "Themes, player styles, queue and gestures stay familiar")
+        HintText("You can change Mix settings from the tune button beside VK Mix.")
     }
 }
 

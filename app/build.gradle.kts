@@ -152,7 +152,6 @@ kotlin {
 android.defaultConfig.apply {
     buildConfigField("String", "GITHUB_REPO", "\"poinncare/Koda-VK\"")
     buildConfigField("String", "GITHUB_USERNAME", "\"poinncare\"")
-    buildConfigField("boolean", "ENABLE_LEGACY_UI", "false")
 }
 
 dependencies {
