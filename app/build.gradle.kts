@@ -23,15 +23,15 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.ivor.ivormusic"
+        applicationId = "com.poinncare.kodavk"
         // Android 11. Anything below 33 only works because core library
         // desugaring is enabled below - NewPipe Extractor calls Java 10/11
         // methods (URLEncoder.encode(String, Charset) and friends) that the
         // platform did not gain until API 33.
         minSdk = 30
         targetSdk = 36
-        versionCode = 25
-        versionName = "4.7"
+        versionCode = 1
+        versionName = "1.0.0"
         manifestPlaceholders["appLabel"] = "@string/app_name"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -82,7 +82,7 @@ android {
     }
     signingConfigs {
         create("release") {
-            storeFile = file("${project.rootDir}/keystore/ivormusic.jks")
+            storeFile = file("${project.rootDir}/keystore/kodavk-release.jks")
             storePassword = signingCredential("KEYSTORE_PASSWORD", "keystore.storePassword")
             keyAlias = signingCredential("KEY_ALIAS", "keystore.keyAlias")
             keyPassword = signingCredential("KEY_PASSWORD", "keystore.keyPassword")
@@ -150,8 +150,9 @@ kotlin {
 
 // Build info available via BuildConfig
 android.defaultConfig.apply {
-    buildConfigField("String", "GITHUB_REPO", "\"ivorisnoob/Koda\"")
-    buildConfigField("String", "GITHUB_USERNAME", "\"ivorisnoob\"")
+    buildConfigField("String", "GITHUB_REPO", "\"poinncare/Koda-VK\"")
+    buildConfigField("String", "GITHUB_USERNAME", "\"poinncare\"")
+    buildConfigField("boolean", "ENABLE_LEGACY_UI", "false")
 }
 
 dependencies {

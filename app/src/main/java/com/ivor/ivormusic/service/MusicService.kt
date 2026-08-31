@@ -55,6 +55,7 @@ import com.ivor.ivormusic.data.SongSource
 import com.ivor.ivormusic.data.StatsRepository
 import com.ivor.ivormusic.data.ThemePreferences
 import com.ivor.ivormusic.data.YouTubeRepository
+import com.ivor.ivormusic.data.vk.VkMusicRepository
 import com.ivor.ivormusic.widget.PlayerWidgetStore
 import com.ivor.ivormusic.widget.PlayerWidgets
 import com.ivor.ivormusic.widget.toWidgetSnapshot
@@ -110,6 +111,7 @@ class MusicService : MediaLibraryService() {
     // attach to Koda's playback
     private var audioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private lateinit var youtubeRepository: YouTubeRepository
+    private lateinit var vkMusicRepository: VkMusicRepository
     private lateinit var downloadRepository: DownloadRepository
     private lateinit var themePreferences: ThemePreferences
     private lateinit var audioProfileStore: AudioProfileStore
@@ -333,6 +335,7 @@ class MusicService : MediaLibraryService() {
         // default; the size and toggle stay live via observePreferences().
         CacheManager.initialize(this, themePreferences.maxCacheSizeMb.value)
         youtubeRepository = YouTubeRepository(this)
+        vkMusicRepository = VkMusicRepository(this)
         downloadRepository = DownloadRepository.getInstance(this)
         audioProfileStore = AudioProfileStore(this)
 
@@ -364,18 +367,9 @@ class MusicService : MediaLibraryService() {
         // on whether the now-playing Compose screen happens to exist.
         initializeCast()
 
-        // 6. Pre-warm caches
-        preWarmAutoCache()
-
-        // 7. Warm the visitorData token so the first stream resolution of a
-        // session doesn't pay for the mint on its critical path. Music-first
-        // sessions (and Android Auto) never construct VideoPlayerViewModel,
-        // which was the only other place that prefetched it.
-        resolveScope.launch { youtubeRepository.prefetchVisitorData() }
+        // 6. Warm local audio profiling. VK is the only online source in this fork;
+        // legacy YouTube browse code remains unreachable during the transition.
         resolveScope.launch { audioProfileStore.warm() }
-
-        // 8. React to the user switching profile.
-        observeProfileSwitches()
     }
 
     /**
@@ -1409,7 +1403,11 @@ class MusicService : MediaLibraryService() {
         // bounds the whole resolution and handles playback-time re-resolution.
         return try {
             val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
-                youtubeRepository.getStreamUrl(videoId)
+                if (videoId.startsWith("vk:")) {
+                    runCatching { vkMusicRepository.resolveStream(videoId) }
+                } else {
+                    youtubeRepository.getStreamUrl(videoId)
+                }
             }
             
             val streamUrl = result?.getOrNull()

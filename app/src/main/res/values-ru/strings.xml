@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Koda</string>
+    <string name="app_name">Koda VK</string>
     <string name="now_playing_channel_name">Сейчас играет</string>
     <string name="video_playback_channel_name">Воспроизведение видео</string>
 

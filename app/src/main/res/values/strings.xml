@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Koda</string>
+    <string name="app_name">Koda VK</string>
 
     <!--
       Shared by the MediaStyle notification and the playback progress Live
@@ -223,7 +223,7 @@
     <string name="sp_sign_in_cookies_sub">Paste a cookie header instead of using the web sign-in</string>
     <string name="sp_theme">Theme</string>
     <string name="settings_title">Settings</string>
-    <string name="about_tagline">A modern, open-source music player with YouTube Music integration.</string>
+    <string name="about_tagline">A modern, open-source VK Music player in Koda\'s design.</string>
     <string name="about_version">Version</string>
     <string name="about_build">Build</string>
     <string name="about_build_type">Build Type</string>

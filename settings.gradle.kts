@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "IvorMusic"
+rootProject.name = "KodaVK"
 include(":app")

@@ -137,6 +137,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     // YouTube Repository for fetching more songs
     private val youTubeRepository = com.ivor.ivormusic.data.YouTubeRepository(context)
+    private val vkMusicRepository = com.ivor.ivormusic.data.vk.VkMusicRepository(context)
 
     // Taste-profile based recommendations for the auto-queue
     private val recommendationEngine = com.ivor.ivormusic.data.RecommendationEngine(context, youTubeRepository)
@@ -1278,7 +1279,23 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun toggleLike(song: Song): Boolean {
         val isNowLiked = likedSongsRepository.toggleLike(song)
-        if (song.id == _currentSong.value?.id) _isCurrentSongLiked.value = isNowLiked
+        if (song.id == _currentSong.value?.id) {
+            _isCurrentSongLiked.value = isNowLiked
+            if (song.source == com.ivor.ivormusic.data.SongSource.VK) {
+                _currentSong.value = song.copy(vkLiked = isNowLiked)
+            }
+        }
+        if (song.source == com.ivor.ivormusic.data.SongSource.VK) {
+            viewModelScope.launch {
+                try {
+                    vkMusicRepository.setLiked(song, isNowLiked)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    KLog.e("PlayerViewModel", "VK favorite update failed", error)
+                }
+            }
+        }
         return isNowLiked
     }
 
@@ -1288,7 +1305,7 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
     private fun updateCurrentSongLikedStatus() {
         val songId = _currentSong.value?.id
         _isCurrentSongLiked.value = if (songId != null) {
-            likedSongsRepository.isLiked(songId)
+            _currentSong.value?.vkLiked == true || likedSongsRepository.isLiked(songId)
         } else {
             false
         }

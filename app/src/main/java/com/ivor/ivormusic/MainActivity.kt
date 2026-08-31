@@ -219,6 +219,17 @@ class MainActivity : ComponentActivity() {
                 uiScale = uiScale
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
+                    val vkPlayerViewModel: PlayerViewModel = viewModel {
+                        PlayerViewModel(applicationContext)
+                    }
+                    com.ivor.ivormusic.ui.vk.VkMusicScreen(
+                        playerViewModel = vkPlayerViewModel,
+                        ambientBackground = ambientBackground,
+                        artworkColors = playerArtworkColors,
+                        playerStyle = playerStyle,
+                        onPlayerStyleChange = { themeViewModel.setPlayerStyle(it) },
+                    )
+                    if (BuildConfig.ENABLE_LEGACY_UI) {
                     MusicApp(
                         pendingSharedLink = pendingSharedLink,
                         isInPipMode = isInPipMode,
@@ -339,6 +350,7 @@ class MainActivity : ComponentActivity() {
                         localOnlyMode = localOnlyMode,
                         onLocalOnlyModeToggle = { themeViewModel.setLocalOnlyMode(it) }
                     )
+                    }
                 }
             }
         }
@@ -757,7 +769,7 @@ fun MusicApp(
     ) {
         NavHost(
             navController = navController,
-            startDestination = if (onboardingCompleted) "home" else "onboarding"
+            startDestination = "home"
         ) {
             composable("onboarding") {
                 OnboardingScreen(
@@ -792,48 +804,12 @@ fun MusicApp(
             }
 
             composable("home") {
-                HomeScreen(
-                    onSongClick = { song ->
-                        playerViewModel.playSong(song)
-                    },
+                com.ivor.ivormusic.ui.vk.VkMusicScreen(
                     playerViewModel = playerViewModel,
-                    viewModel = homeViewModel,
-                    isDarkMode = isDarkMode,
-                    onThemeToggle = onThemeToggle,
-                    onNavigateToSettings = { navController.navigate("settings") },
-                    onNavigateToDownloads = { navController.navigate("downloads") },
-                    onNavigateToStats = { navController.navigate("stats") },
-                    onNavigateToSubscriptions = { navController.navigate("subscriptions") },
-                    onNavigateToUpdate = { navController.navigate("update") },
-                    onNavigateToVideoPlayer = { video ->
-                        videoPlayerViewModel.playVideo(video)
-                    },
-                    onPlayDownloadedVideos = { videos, selected ->
-                        videoPlayerViewModel.playDownloadedVideos(videos, selected)
-                    },
-                    onPlayVideoQueue = { queue ->
-                        videoPlayerViewModel.playQueue(queue)
-                    },
-                    onEnqueueVideo = { video, playNext ->
-                        videoPlayerViewModel.enqueueVideo(video, playNext)
-                    },
-                    onOpenShorts = openShorts,
-                    onOpenChannel = openChannel,
-                    shortsEnabled = shortsEnabled,
-                    loadLocalSongs = loadLocalSongs,
-                    excludedFolders = excludedFolders,
                     ambientBackground = ambientBackground,
-                    playerArtworkColors = playerArtworkColors,
-                    videoMode = videoMode,
-                    onVideoModeToggle = switchPlaybackMode,
-                    showModeToggle = homeModeToggleEnabled,
+                    artworkColors = playerArtworkColors,
                     playerStyle = playerStyle,
                     onPlayerStyleChange = onPlayerStyleChange,
-                    manualScan = manualScanEnabled,
-                    localOnly = localOnlyMode,
-                    hasVideoMiniPlayer = hasVideoMiniPlayer,
-                    spotlightHome = spotlightHome,
-                    nonExpressiveNavigationBar = nonExpressiveNavigationBar
                 )
             }
             composable(

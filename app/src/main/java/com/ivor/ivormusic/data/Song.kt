@@ -9,7 +9,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class SongSource {
     LOCAL,
-    YOUTUBE
+    YOUTUBE,
+    VK
 }
 
 /**
@@ -35,7 +36,12 @@ data class Song(
     // stamps its own notion of "added": MediaStore DATE_ADDED for device
     // files, download completion time for downloads, like time for likes.
     // Null means unknown (sorts last), never zero.
-    val dateAdded: Long? = null
+    val dateAdded: Long? = null,
+    val vkOwnerId: Long? = null,
+    val vkAudioId: Long? = null,
+    val vkAccessKey: String? = null,
+    val vkLiked: Boolean = false,
+    val vkStreamUrl: String? = null,
 ) {
     val highResThumbnailUrl: String?
         get() = thumbnailUrl?.let { url ->

@@ -44,6 +44,8 @@ internal fun MusicQueueItem.toPlaybackMediaItem(
         .setMediaMetadata(metadata)
     if (song.source == SongSource.LOCAL && song.uri != null) {
         builder.setUri(song.uri)
+    } else if (song.source == SongSource.VK && !song.vkStreamUrl.isNullOrBlank()) {
+        builder.setUri(song.vkStreamUrl)
     } else {
         builder.setUri("https://placeholder.ivormusic/${song.id}")
     }
