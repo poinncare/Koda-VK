@@ -1939,6 +1939,16 @@ class MusicService : MediaLibraryService() {
                 && !existingUri.toString().startsWith(PLACEHOLDER_PREFIX)
                 && (existingUri.scheme == "content" || existingUri.scheme == "file")
 
+            // VK returns a signed CDN URL with catalog/search results. Keep it
+            // on the item: replacing it with a placeholder forces an avoidable
+            // audio.getById round trip exactly when the user presses Play.
+            // URLs are still refreshed by invalidateVkStreamsAfterNetworkChange
+            // and the normal playback-error retry path when their route expires.
+            val isVkStreamUri = item.mediaId.startsWith("vk:") &&
+                existingUri != null &&
+                (existingUri.scheme == "http" || existingUri.scheme == "https") &&
+                !existingUri.toString().startsWith(PLACEHOLDER_PREFIX)
+
             // Check if we have metadata in our browse cache to enrich the item immediately
             var meta = item.mediaMetadata
             if (meta.title == null) {
@@ -1955,9 +1965,9 @@ class MusicService : MediaLibraryService() {
                 }
             }
 
-            return if (isLocalUri) {
-                // Local song: preserve the original content:// URI for direct playback
-                KLog.d(TAG, "onAddMediaItems: Preserving local URI for ${item.mediaId}: $existingUri")
+            return if (isLocalUri || isVkStreamUri) {
+                // Local and already-resolved VK songs play directly.
+                KLog.d(TAG, "onAddMediaItems: Preserving direct URI for ${item.mediaId}")
                 MediaItem.Builder()
                     .setMediaId(item.mediaId)
                     .setUri(existingUri)
@@ -2430,6 +2440,10 @@ class MusicService : MediaLibraryService() {
         // lookup in performResolution instead.
         if (song.source == SongSource.LOCAL && song.uri != null) {
             builder.setUri(song.uri)
+        } else if (song.source == SongSource.VK && !song.vkStreamUrl.isNullOrBlank()) {
+            // Browse playback should be zero-resolution: catalog responses
+            // already contain the signed VK CDN URL in the common case.
+            builder.setUri(song.vkStreamUrl)
         }
         return builder.build()
     }
