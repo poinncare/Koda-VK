@@ -691,6 +691,10 @@
     <string name="us_all_good">All Good!</string>
     <string name="us_latest_body">You\'re running the latest version of Koda.</string>
     <string name="us_couldnt_check">Couldn\'t Check for Updates</string>
+    <string name="us_download_update">Download and install</string>
+    <string name="us_downloading_update">Downloading… %1$d%%</string>
+    <string name="us_preparing_update">Preparing download…</string>
+    <string name="us_install_failed">Update failed: %1$s</string>
 
     <!-- Bug report -->
     <string name="rb_copied">Report copied to clipboard</string>

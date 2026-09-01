@@ -4,6 +4,8 @@ import com.ivor.ivormusic.util.KLog
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
@@ -144,6 +146,17 @@ class MusicService : MediaLibraryService() {
     // Kept for warmStreamCache; playback wires the factory into the player
     // separately in initializePlayer.
     private var cacheDataSourceFactory: androidx.media3.datasource.cache.CacheDataSource.Factory? = null
+    private var currentDefaultNetwork: Network? = null
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val previous = currentDefaultNetwork
+            currentDefaultNetwork = network
+            if (previous != null && previous != network) {
+                serviceScope.launch { invalidateVkStreamsAfterNetworkChange() }
+            }
+        }
+
+    }
 
     // Songs whose stream head has been (or is being) written into the disk
     // cache this session, so each prefetch round doesn't re-warm them.
@@ -336,6 +349,10 @@ class MusicService : MediaLibraryService() {
         CacheManager.initialize(this, themePreferences.maxCacheSizeMb.value)
         youtubeRepository = YouTubeRepository(this)
         vkMusicRepository = VkMusicRepository(this)
+        runCatching {
+            (getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager)
+                .registerDefaultNetworkCallback(networkCallback)
+        }.onFailure { KLog.w(TAG, "Default-network observation is unavailable", it) }
         downloadRepository = DownloadRepository.getInstance(this)
         audioProfileStore = AudioProfileStore(this)
 
@@ -430,6 +447,10 @@ class MusicService : MediaLibraryService() {
 
     override fun onDestroy() {
         KLog.i(TAG, "MusicService Destroying...")
+        runCatching {
+            (getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager)
+                .unregisterNetworkCallback(networkCallback)
+        }
         // The widgets keep the track but must not keep claiming it is playing:
         // they render from a stored snapshot with no session of their own, so
         // nothing else would ever correct a playing flag left behind here.
@@ -1588,6 +1609,48 @@ class MusicService : MediaLibraryService() {
         // never be re-warmed. Forget them and let the fresh prefetch warm again.
         warmedIds.clear()
         if (reset > 0) KLog.d(TAG, "Recovery: reset $reset queued item(s) for re-resolution")
+    }
+
+    /**
+     * VK CDN links can be coupled to the network route that resolved them.
+     * Switching a VPN changes that route while the queue still contains the
+     * old links, so forget every queued VK URL before it becomes the next
+     * track. The playing item is allowed to finish; if it cannot, the normal
+     * source-error retry resolves it again on the new network.
+     */
+    private fun invalidateVkStreamsAfterNetworkChange() {
+        val ids = buildSet {
+            addAll(uriCache.keys.filter { it.startsWith("vk:") })
+            for (index in 0 until player.mediaItemCount) {
+                player.getMediaItemAt(index).mediaId
+                    .takeIf { it.startsWith("vk:") }
+                    ?.let(::add)
+            }
+        }
+        if (ids.isEmpty()) return
+
+        ids.forEach { id ->
+            uriCache.remove(id)
+            retryCounts.remove(id)
+            activeResolutions.forget(id)
+            warmedIds.remove(id)
+        }
+
+        val playingIndex = player.currentMediaItemIndex
+        var reset = 0
+        for (index in 0 until player.mediaItemCount) {
+            if (index == playingIndex) continue
+            val item = player.getMediaItemAt(index)
+            if (!item.mediaId.startsWith("vk:")) continue
+            val uri = item.localConfiguration?.uri ?: continue
+            if (uri.scheme != "http" && uri.scheme != "https") continue
+            player.replaceMediaItem(
+                index,
+                item.buildUpon().setUri("$PLACEHOLDER_PREFIX${item.mediaId}").build(),
+            )
+            reset++
+        }
+        KLog.i(TAG, "Network changed: invalidated ${ids.size} VK stream(s), reset $reset queued item(s)")
     }
 
     /**

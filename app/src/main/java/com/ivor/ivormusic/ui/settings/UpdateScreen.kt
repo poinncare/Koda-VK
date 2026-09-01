@@ -40,9 +40,12 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import coil.compose.AsyncImage
 import com.ivor.ivormusic.BuildConfig
+import com.ivor.ivormusic.data.AppUpdateInstaller
+import com.ivor.ivormusic.data.ApkAsset
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 🌟 Premium Update Screen
@@ -718,8 +721,32 @@ private fun DownloadSection(
     secondaryTextColor: Color
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val installer = remember(context) { AppUpdateInstaller(context) }
     val deviceAbi = remember { UpdateRepository.getDeviceAbi() }
     val bestApk = remember(result.apkAssets) { UpdateRepository.findBestApk(result.apkAssets) }
+    var downloadProgress by remember { mutableStateOf<Int?>(null) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+
+    fun downloadAndInstall(asset: ApkAsset) {
+        if (isDownloading) return
+        isDownloading = true
+        downloadProgress = null
+        downloadError = null
+        scope.launch {
+            try {
+                val apk = installer.download(asset) { progress ->
+                    scope.launch { downloadProgress = progress }
+                }
+                installer.launchInstaller(apk)
+            } catch (error: Exception) {
+                downloadError = error.message ?: error.javaClass.simpleName
+            } finally {
+                isDownloading = false
+            }
+        }
+    }
     
     Column(
         modifier = Modifier
@@ -790,10 +817,10 @@ private fun DownloadSection(
         // Download Button
         Button(
             onClick = {
-                val downloadUrl = bestApk?.downloadUrl ?: result.htmlUrl
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))
-                context.startActivity(intent)
+                if (bestApk != null) downloadAndInstall(bestApk)
+                else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.htmlUrl)))
             },
+            enabled = !isDownloading,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -803,15 +830,33 @@ private fun DownloadSection(
             )
         ) {
             Icon(
-                Icons.Rounded.Download,
+                if (isDownloading) Icons.Rounded.Sync else Icons.Rounded.Download,
                 contentDescription = null,
                 modifier = Modifier.size(22.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = if (bestApk != null) "Download for $deviceAbi" else "View on GitHub",
+                text = when {
+                    isDownloading && downloadProgress != null -> stringResource(
+                        R.string.us_downloading_update,
+                        downloadProgress ?: 0,
+                    )
+                    isDownloading -> stringResource(R.string.us_preparing_update)
+                    bestApk != null -> stringResource(R.string.us_download_update)
+                    else -> stringResource(R.string.us_view_release)
+                },
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
+            )
+        }
+
+        downloadError?.let { message ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.us_install_failed, message),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
         
@@ -860,8 +905,7 @@ private fun DownloadSection(
                         .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .clickable {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apk.downloadUrl))
-                            context.startActivity(intent)
+                            downloadAndInstall(apk)
                         },
                     shape = RoundedCornerShape(16.dp),
                     color = if (isBest) primaryColor.copy(alpha = 0.1f) else surfaceColor,

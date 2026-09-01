@@ -46,10 +46,9 @@ class UpdateRepository {
                 .header("User-Agent", "IvorMusic")
                 .build()
             
-            val response = client.newCall(request).execute()
-            
-            when (response.code) {
-                200 -> {
+            client.newCall(request).execute().use { response ->
+                when (response.code) {
+                    200 -> {
                     val json = response.body?.string() ?: return@withContext UpdateResult.Error("Empty response")
                     val jsonObject = JSONObject(json)
                     
@@ -71,7 +70,8 @@ class UpdateRepository {
                                     ApkAsset(
                                         name = name,
                                         downloadUrl = asset.optString("browser_download_url"),
-                                        size = asset.optLong("size", 0L)
+                                        size = asset.optLong("size", 0L),
+                                        digest = asset.optString("digest").takeIf { it.isNotBlank() },
                                     )
                                 )
                             }
@@ -104,13 +104,14 @@ class UpdateRepository {
                         UpdateResult.UpToDate(currentVersion = cleanCurrentVersion)
                     }
                 }
-                404 -> {
-                    KLog.w(TAG, "No releases found for $repoPath")
-                    UpdateResult.NoReleases
-                }
-                else -> {
-                    KLog.e(TAG, "API error ${response.code}: ${response.message}")
-                    UpdateResult.Error("GitHub API error (${response.code})")
+                    404 -> {
+                        KLog.w(TAG, "No releases found for $repoPath")
+                        UpdateResult.NoReleases
+                    }
+                    else -> {
+                        KLog.e(TAG, "API error ${response.code}: ${response.message}")
+                        UpdateResult.Error("GitHub API error (${response.code})")
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -123,10 +124,17 @@ class UpdateRepository {
      * Compare version strings to determine if latest is newer than current.
      * Handles formats like "1.4", "1.4.1", "2.0"
      */
-    private fun isNewerVersion(latest: String, current: String): Boolean {
+    internal fun isNewerVersion(latest: String, current: String): Boolean {
         try {
-            val latestParts = latest.split(".").map { it.toIntOrNull() ?: 0 }
-            val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
+            fun parts(version: String): List<Int> = version.trim()
+                .removePrefix("v")
+                .removePrefix("V")
+                .substringBefore('-')
+                .split(".")
+                .map { it.toIntOrNull() ?: 0 }
+
+            val latestParts = parts(latest)
+            val currentParts = parts(current)
             
             // Pad with zeros to same length
             val maxLength = maxOf(latestParts.size, currentParts.size)
@@ -196,8 +204,8 @@ class UpdateRepository {
         /**
          * Find the best matching APK for this device
          */
-        fun findBestApk(assets: List<ApkAsset>): ApkAsset? {
-            val abi = getDeviceAbi()
+        fun findBestApk(assets: List<ApkAsset>, deviceAbi: String = getDeviceAbi()): ApkAsset? {
+            val abi = deviceAbi
             // First try exact ABI match
             val abiMatch = assets.find { asset ->
                 asset.name.contains(abi, ignoreCase = true)
@@ -229,7 +237,8 @@ class UpdateRepository {
 data class ApkAsset(
     val name: String,
     val downloadUrl: String,
-    val size: Long
+    val size: Long,
+    val digest: String? = null,
 )
 
 /**
