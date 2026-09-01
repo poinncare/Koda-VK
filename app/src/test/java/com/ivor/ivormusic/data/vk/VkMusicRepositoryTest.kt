@@ -45,4 +45,10 @@ class VkMusicRepositoryTest {
         VkSessionStore.notifySessionChanged()
         assertTrue(VkSessionStore.sessionRevision.value > before)
     }
+
+    @Test
+    fun tokenLifetimeIsConvertedToAbsoluteEpoch() {
+        assertEquals(1_700_003_600L, VkMusicRepository.expiresAtSeconds(1_700_000_000L, 3_600L))
+        assertEquals(0L, VkMusicRepository.expiresAtSeconds(1_700_000_000L, 0L))
+    }
 }

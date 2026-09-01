@@ -43,11 +43,11 @@ class VkMusicRepository(context: Context) {
         }
         val data = json.requireObject("data")
         val token = data.requireString("access_token")
-        val expires = data.optLong("expires", 0L)
+        val expiresIn = data.optLong("expires", 0L)
         sessionStore.write(
             VkSession(
                 accessToken = token,
-                expiresAtSeconds = expires,
+                expiresAtSeconds = expiresAtSeconds(nowSeconds(), expiresIn),
                 cookieP = cookieP,
                 remixSid = remixSid,
             )
@@ -230,9 +230,17 @@ class VkMusicRepository(context: Context) {
     private suspend fun api(method: String, params: Map<String, String> = emptyMap()): JSONObject {
         var session = sessionStore.read() ?: throw VkAuthRequiredException()
         if (session.expiresAtSeconds > 0 && session.expiresAtSeconds - nowSeconds() < REFRESH_THRESHOLD_SECONDS) {
-            signIn(session.cookieP, session.remixSid)
-            session = sessionStore.read() ?: throw VkAuthRequiredException()
+            refreshSession(session)?.let { session = it }
         }
+        return executeApi(method, params, session, retryAuth = true)
+    }
+
+    private suspend fun executeApi(
+        method: String,
+        params: Map<String, String>,
+        session: VkSession,
+        retryAuth: Boolean,
+    ): JSONObject {
         val body = FormBody.Builder().apply { params.forEach { (key, value) -> add(key, value) } }.build()
         val url = Uri.parse("${API_BASE}${method}").buildUpon()
             .appendQueryParameter("v", API_VERSION)
@@ -252,13 +260,23 @@ class VkMusicRepository(context: Context) {
         }
         json.optJSONObject("error")?.let { error ->
             val code = error.optInt("error_code")
-            if (code == 5) {
-                sessionStore.clear()
-                throw VkAuthRequiredException(error.optString("error_msg"))
+            if (code == 5 && retryAuth) {
+                val refreshed = refreshSession(session)
+                if (refreshed != null) return executeApi(method, params, refreshed, retryAuth = false)
             }
+            if (code == 5) throw VkAuthRequiredException(error.optString("error_msg"))
             throw IOException(error.optString("error_msg", "VK API error $code"))
         }
         return json
+    }
+
+    private suspend fun refreshSession(session: VkSession): VkSession? = try {
+        signIn(session.cookieP, session.remixSid)
+        sessionStore.read()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
     }
 
     private fun executeJson(request: Request): JSONObject {
@@ -349,7 +367,7 @@ class VkMusicRepository(context: Context) {
         private const val API_VERSION = "5.282"
         private const val API_BASE = "https://api.vk.ru/method/"
         private const val WEB_TOKEN_URL = "https://login.vk.ru/?act=web_token"
-        private const val WEB_USER_AGENT =
+        internal const val WEB_USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
         private const val REFRESH_THRESHOLD_SECONDS = 600L
         private const val MAX_HOME_SECTIONS = 8
@@ -366,6 +384,9 @@ class VkMusicRepository(context: Context) {
             if (parts.size < 3) return null
             return Triple(parts[1].toLongOrNull() ?: return null, parts[2].toLongOrNull() ?: return null, parts.getOrNull(3))
         }
+
+        internal fun expiresAtSeconds(nowSeconds: Long, expiresInSeconds: Long): Long =
+            if (expiresInSeconds > 0) nowSeconds + expiresInSeconds else 0L
 
         internal fun parseProfile(item: JSONObject): VkProfile? {
             val id = item.optLong("id", Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE } ?: return null

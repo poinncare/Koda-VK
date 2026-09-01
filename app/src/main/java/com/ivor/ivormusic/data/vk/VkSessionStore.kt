@@ -21,26 +21,30 @@ class VkSessionStore(context: Context) {
         val token = preferences.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() } ?: return null
         val cookieP = preferences.getString(KEY_COOKIE_P, null)?.takeIf { it.isNotBlank() } ?: return null
         val remixSid = preferences.getString(KEY_REMIX_SID, null)?.takeIf { it.isNotBlank() } ?: return null
+        val storedExpiry = preferences.getLong(KEY_EXPIRES, 0L)
         return VkSession(
             accessToken = token,
-            expiresAtSeconds = preferences.getLong(KEY_EXPIRES, 0L),
+            // Older builds stored VK's expiresIn duration as an epoch.
+            expiresAtSeconds = storedExpiry.takeIf { it >= MIN_VALID_EPOCH_SECONDS } ?: 0L,
             cookieP = cookieP,
             remixSid = remixSid,
         )
     }
 
     fun write(session: VkSession) {
-        preferences.edit()
+        val saved = preferences.edit()
             .putString(KEY_TOKEN, session.accessToken)
             .putLong(KEY_EXPIRES, session.expiresAtSeconds)
             .putString(KEY_COOKIE_P, session.cookieP)
             .putString(KEY_REMIX_SID, session.remixSid)
-            .apply()
+            .commit()
+        check(saved) { "VK session could not be saved" }
         notifySessionChanged()
     }
 
     fun clear() {
-        preferences.edit().clear().apply()
+        val cleared = preferences.edit().clear().commit()
+        check(cleared) { "VK session could not be cleared" }
         notifySessionChanged()
     }
 
@@ -56,5 +60,6 @@ class VkSessionStore(context: Context) {
         private const val KEY_EXPIRES = "expires_at_seconds"
         private const val KEY_COOKIE_P = "cookie_p"
         private const val KEY_REMIX_SID = "remix_sid"
+        private const val MIN_VALID_EPOCH_SECONDS = 1_577_836_800L
     }
 }

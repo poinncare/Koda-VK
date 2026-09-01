@@ -7,6 +7,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
+import com.ivor.ivormusic.data.vk.VkMusicRepository
 
 /**
  * HTTP data source for googlevideo media that downloads in bounded chunks.
@@ -62,6 +63,16 @@ class ChunkedStreamDataSource private constructor(
 
         private val CONTENT_RANGE_REGEX = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""")
 
+        private fun isVkAudioUri(uri: android.net.Uri): Boolean = isVkAudioHost(uri.host)
+
+        internal fun isVkAudioHost(value: String?): Boolean {
+            val host = value?.lowercase().orEmpty()
+            return host == "vk.com" || host == "vk.ru" ||
+                host.endsWith(".vk.com") || host.endsWith(".vk.ru") ||
+                host.endsWith(".vkuseraudio.net") || host.endsWith(".useraudio.net") ||
+                host.endsWith(".vk-cdn.net")
+        }
+
         /**
          * Whether chunking applies to [uri].
          *
@@ -105,10 +116,15 @@ class ChunkedStreamDataSource private constructor(
     }
 
     override fun open(dataSpec: DataSpec): Long {
-        delegate.setRequestProperty(
-            "User-Agent",
-            YouTubeRepository.uaForPlaybackUri(dataSpec.uri)
-        )
+        if (isVkAudioUri(dataSpec.uri)) {
+            delegate.setRequestProperty("User-Agent", VkMusicRepository.WEB_USER_AGENT)
+            delegate.setRequestProperty("Referer", "https://vk.ru/")
+            delegate.setRequestProperty("Origin", "https://vk.ru")
+        } else {
+            delegate.setRequestProperty("User-Agent", YouTubeRepository.uaForPlaybackUri(dataSpec.uri))
+            delegate.clearRequestProperty("Referer")
+            delegate.clearRequestProperty("Origin")
+        }
         currentSpec = dataSpec
         position = dataSpec.position
         chunked = shouldChunk(dataSpec.uri)

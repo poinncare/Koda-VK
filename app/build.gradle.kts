@@ -32,7 +32,7 @@ android {
         targetSdk = 36
         // Keep versionCode monotonic so this 1.0.0 re-release can update an
         // installed 1.0.1/1.0.2 APK even though the public version was reset.
-        versionCode = 4
+        versionCode = 5
         versionName = "1.0.0"
         manifestPlaceholders["appLabel"] = "@string/app_name"
 
