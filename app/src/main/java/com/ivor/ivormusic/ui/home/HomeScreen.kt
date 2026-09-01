@@ -82,6 +82,8 @@ import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.IconToggleButton
 import com.ivor.ivormusic.ui.components.ExpressivePullToRefresh
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.carousel.CarouselDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
@@ -142,6 +144,7 @@ import com.ivor.ivormusic.R
 import androidx.compose.ui.res.stringResource
 import com.ivor.ivormusic.data.UpdateRepository
 import com.ivor.ivormusic.data.UpdateResult
+import com.ivor.ivormusic.ui.vk.VkAuthActivity
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
@@ -204,10 +207,17 @@ fun HomeScreen(
     val homePreferences = remember(context) { com.ivor.ivormusic.data.ThemePreferences(context) }
     val localSongs by viewModel.songs.collectAsState()
     val youtubeSongs by viewModel.youtubeSongs.collectAsState()
+    val vkLibrarySongs by viewModel.vkLibrarySongs.collectAsState()
     val isYouTubeConnected by viewModel.isYouTubeConnected.collectAsState()
+    val vkAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        VkAuthActivity.sessionFrom(result.data)?.let { session ->
+            viewModel.signInVk(session.cookieP, session.remixSid)
+        }
+    }
     
     // Use local songs or YouTube songs (which includes fallback search results if not logged in)
     val songs = if (loadLocalSongs) localSongs else youtubeSongs
+    val librarySongs = if (loadLocalSongs) localSongs else vkLibrarySongs
 
     // Local play history, for the "Jump back in" rail. Free (a file read, no
     // network), and refreshed whenever the Home tab comes back into view so a
@@ -348,11 +358,18 @@ fun HomeScreen(
     var addAuthAsNewProfile by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
 
-    // The avatar always opens the profile switcher now, signed in or not: with
-    // device-only profiles there is always something to switch between, and
-    // sending a signed-out user straight to a Google login was the app assuming
-    // an account is the only way to have an identity.
-    val onProfileClick: () -> Unit = { showAccountSheet = true }
+    // The avatar is the app's one sign-in entry point. Signed out it opens the
+    // VK login directly - there is a single account to connect, so a switcher
+    // with nothing in it would only add a step.
+    val onProfileClick: () -> Unit = {
+        if (isYouTubeConnected) {
+            // Signed in: the VK account lives on the Settings account page,
+            // which is where disconnecting and re-authorising happen.
+            onNavigateToSettings()
+        } else {
+            vkAuthLauncher.launch(VkAuthActivity.createIntent(context))
+        }
+    }
 
     val backgroundColor = MaterialTheme.colorScheme.background
     
@@ -723,19 +740,19 @@ fun HomeScreen(
                             )
                         } else {
                             LibraryContent(
-                                songs = songs,
+                                songs = librarySongs,
                                 isLocalLibrary = loadLocalSongs,
                                 onDownloadsClick = onNavigateToDownloads,
                                 onSongClick = { song: Song ->
                                     // Pass all songs to enable Next/Previous navigation
-                                    playerViewModel.playQueue(songs, song)
+                                    playerViewModel.playQueue(librarySongs, song)
                                     showPlayerSheet = true
                                 },
                                 onPlaylistClick = { playlist: com.ivor.ivormusic.data.PlaylistDisplayItem ->
                                     // Optional: navigate to playlist detail or handled by parent
                                 },
-                                onPlayQueue = { songs: List<Song>, selectedSong: Song? ->
-                                    playerViewModel.playQueue(songs, selectedSong)
+                                onPlayQueue = { queueSongs: List<Song>, selectedSong: Song? ->
+                                    playerViewModel.playQueue(queueSongs, selectedSong)
                                     showPlayerSheet = true
                                 },
                                 contentPadding = listContentPadding,

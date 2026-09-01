@@ -68,12 +68,29 @@ class VkMusicRepository(context: Context) {
         val ordered = descriptors.sortedBy { if (it.first == preferred) 0 else 1 }.take(MAX_HOME_SECTIONS)
         val sections = ordered.mapNotNull { (id, title) ->
             runCatching { loadSection(id, title) }.getOrNull()
-        }
-        val librarySection = sections.firstOrNull { it.id == preferred } ?: sections.firstOrNull()
+        }.groupBy { it.title.trim().lowercase() }
+            .values
+            .mapNotNull { duplicates -> duplicates.maxByOrNull { it.songs.size + it.playlists.size } }
+        val library = runCatching {
+            api("audio.get", mapOf("count" to "1000"))
+                .requireObject("response")
+                .optJSONArray("items")
+                .objects()
+                .mapNotNull(::parseSong)
+                .distinctBy { it.id }
+        }.getOrDefault(emptyList())
+        val ownPlaylists = runCatching {
+            api("audio.getPlaylists", mapOf("count" to "200"))
+                .requireObject("response")
+                .optJSONArray("items")
+                .objects()
+                .mapNotNull(::parsePlaylist)
+        }.getOrDefault(emptyList())
         VkCatalog(
             sections = sections.filter { it.songs.isNotEmpty() || it.playlists.isNotEmpty() },
-            library = librarySection?.songs.orEmpty(),
-            playlists = sections.flatMap { it.playlists }.distinctBy { "${it.ownerId}_${it.id}" },
+            library = library,
+            playlists = (ownPlaylists + sections.flatMap { it.playlists })
+                .distinctBy { "${it.ownerId}_${it.id}" },
         )
     }
 
@@ -142,11 +159,36 @@ class VkMusicRepository(context: Context) {
         api("audio.deletePlaylist", mapOf("owner_id" to playlist.ownerId.toString(), "playlist_id" to playlist.id.toString()))
     }
 
+    suspend fun editPlaylist(playlist: VkPlaylist, title: String, description: String = "") = withContext(Dispatchers.IO) {
+        api(
+            "audio.editPlaylist",
+            mapOf(
+                "owner_id" to playlist.ownerId.toString(),
+                "playlist_id" to playlist.id.toString(),
+                "title" to title,
+                "description" to description,
+            ),
+        )
+    }
+
     suspend fun addToPlaylist(playlist: VkPlaylist, song: Song) = withContext(Dispatchers.IO) {
         val ownerId = song.vkOwnerId ?: throw IOException("Missing VK owner id")
         val audioId = song.vkAudioId ?: throw IOException("Missing VK audio id")
         api(
             "audio.addToPlaylist",
+            mapOf(
+                "owner_id" to playlist.ownerId.toString(),
+                "playlist_id" to playlist.id.toString(),
+                "audio_ids" to "${ownerId}_${audioId}",
+            ),
+        )
+    }
+
+    suspend fun removeFromPlaylist(playlist: VkPlaylist, song: Song) = withContext(Dispatchers.IO) {
+        val ownerId = song.vkOwnerId ?: throw IOException("Missing VK owner id")
+        val audioId = song.vkAudioId ?: throw IOException("Missing VK audio id")
+        api(
+            "audio.deleteFromPlaylist",
             mapOf(
                 "owner_id" to playlist.ownerId.toString(),
                 "playlist_id" to playlist.id.toString(),

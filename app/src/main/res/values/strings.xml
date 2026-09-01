@@ -103,7 +103,7 @@
     <string name="home_section_recent_albums">Recent Albums</string>
     <string name="home_section_jump_back_in">Jump back in</string>
     <string name="your_mix_line1">Your</string>
-    <string name="your_mix_line2">Mix</string>
+    <string name="your_mix_line2">Микс</string>
     <string name="update_badge_version">v%1$s</string>
     <string name="artists_joined">%1$s, %2$s</string>
     <string name="cd_profile">Profile</string>
@@ -519,7 +519,7 @@
     <string name="cd_playlist_options">Playlist options</string>
     <string name="vl_login_wall">Log in to see your playlists, Watch Later and liked videos</string>
     <string name="log_in_youtube">Log in to YouTube</string>
-    <string name="remove_from_account_q">Remove from your YouTube account?</string>
+    <string name="remove_from_account_q">Remove from your VK account?</string>
     <string name="share_playlist_chooser">Share playlist</string>
     <string name="vl_no_videos">No videos in this playlist</string>
     <string name="remove_from_watch_later">Remove from Watch Later</string>
@@ -899,7 +899,7 @@
     <string name="hvm_import_no_channels">Couldn\'t find any channels in that file.</string>
     <string name="hvm_import_read">Couldn\'t read that file.</string>
     <string name="hvm_copy_empty">Your account has no subscriptions to copy.</string>
-    <string name="hvm_network">Couldn\'t reach YouTube.</string>
+    <string name="hvm_network">Couldn\'t reach VK.</string>
     <string name="sm_exported">Exported %1$d channels</string>
     <string name="wifi">Wi-Fi</string>
     <string name="mobile_data">Mobile data</string>
@@ -949,7 +949,7 @@
     <string name="ready_offline">Ready offline</string>
     <string name="lib_everything_in_order">Everything you play, in order</string>
     <string name="lib_edit_playlist">Edit playlist</string>
-    <string name="lib_delete_body">It disappears everywhere you use YouTube, including youtube.com and the official apps.</string>
+    <string name="lib_delete_body">It disappears everywhere you use VK, including vk.com and the official apps.</string>
     <string name="lib_search_in_playlist">Search in playlist</string>
     <string name="lib_change_cover">Change cover</string>
     <string name="lib_reset_cover">Reset cover</string>
@@ -1033,7 +1033,7 @@
     <string name="section_artists">Artists</string>
     <string name="section_albums">Albums</string>
     <string name="source_youtube_videos">YouTube Videos</string>
-    <string name="source_youtube_music">YouTube Music</string>
+    <string name="source_youtube_music">VK Music</string>
     <string name="source_local_library">Local Library</string>
     <string name="search_no_results">No results found</string>
     <string name="search_no_results_hint">Try different keywords or filters</string>

@@ -48,7 +48,7 @@
     <string name="home_section_recent_albums">Недавние альбомы</string>
     <string name="home_section_jump_back_in">Продолжить</string>
     <string name="your_mix_line1">Ваша</string>
-    <string name="your_mix_line2">подборка</string>
+    <string name="your_mix_line2">Микс</string>
     <string name="update_badge_version">v%1$s</string>
     <string name="artists_joined">%1$s, %2$s</string>
     <string name="cd_profile">Профиль</string>

@@ -40,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,7 @@ fun SongOptionsSheet(
     onArtistClick: ((String) -> Unit)? = null
 ) {
     var showPlaylists by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { viewModel.loadYouTubePlaylistsForSheet() }
     val addToPlaylistItems by viewModel.addToPlaylistItems.collectAsState()
 
     if (showPlaylists) {

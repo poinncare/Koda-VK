@@ -198,12 +198,19 @@ fun ArtistScreen(
         }
     }
     
+    // Only a real channel id has a channel behind it. The VK catalog answers
+    // artist lookups with the artist's own name, which is enough to fetch their
+    // songs but is not a page that can be opened or a header that can be
+    // fetched - so both affordances key off this rather than off the id used
+    // for the discography.
+    val browsableChannelId = resolvedChannelId?.takeIf { it.startsWith("UC") }
+
     // The identity half of the header, from the same channel browse the video
     // mode page uses. One request, and the only reason this screen makes it:
     // without it a musician has a banner and a verified tick on one side of the
     // app and neither on the other.
-    LaunchedEffect(resolvedChannelId) {
-        val id = resolvedChannelId ?: return@LaunchedEffect
+    LaunchedEffect(browsableChannelId) {
+        val id = browsableChannelId ?: return@LaunchedEffect
         channelHeader = viewModel?.getChannelHeader(id)
     }
 
@@ -308,7 +315,7 @@ fun ArtistScreen(
                                     // Only offered once a real channel id has
                                     // resolved. A local-library artist is a tag
                                     // on a file and has no channel to open.
-                                    val channelId = resolvedChannelId
+                                    val channelId = browsableChannelId
                                     if (onOpenChannel != null && channelId != null) {
                                         FilledIconButton(
                                             onClick = { onOpenChannel(channelId) },

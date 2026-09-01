@@ -63,10 +63,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhoneAndroid
-import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -602,83 +599,6 @@ private fun VkMixPage() {
         FeatureRow(Icons.Rounded.Bolt, MaterialShapes.Circle, "Personal flow", "VK recommendations form an endless listening queue")
         FeatureRow(Icons.Rounded.Palette, MaterialShapes.SoftBurst, "Koda interface", "Themes, player styles, queue and gestures stay familiar")
         HintText("You can change Mix settings from the tune button beside VK Mix.")
-    }
-}
-
-@Composable
-private fun VideoModePage(
-    videoMode: Boolean,
-    onVideoModeToggle: (Boolean) -> Unit,
-    homeModeToggleEnabled: Boolean,
-    onHomeModeToggleEnabledChange: (Boolean) -> Unit,
-    shortsEnabled: Boolean,
-    onShortsEnabledToggle: (Boolean) -> Unit
-) {
-    OnboardingPageScaffold(
-        icon = Icons.Rounded.Videocam,
-        iconShape = MaterialShapes.Arch,
-        title = stringResource(R.string.ob_page_video_mode),
-        body = stringResource(R.string.ob_page_video_mode_body)
-    ) {
-        SettingSwitchRow(
-            icon = Icons.Rounded.Videocam,
-            title = stringResource(R.string.ob_enable_video_mode),
-            subtitle = stringResource(R.string.ob_enable_video_mode_sub),
-            checked = videoMode,
-            onCheckedChange = onVideoModeToggle
-        )
-
-        SettingSwitchRow(
-            icon = Icons.Rounded.ToggleOn,
-            title = stringResource(R.string.ob_home_switch),
-            subtitle = stringResource(R.string.ob_home_switch_sub),
-            checked = homeModeToggleEnabled,
-            onCheckedChange = onHomeModeToggleEnabledChange
-        )
-
-        SettingSwitchRow(
-            icon = Icons.Rounded.Bolt,
-            title = stringResource(R.string.sp_shorts),
-            subtitle = stringResource(R.string.ob_shorts_sub),
-            checked = shortsEnabled,
-            onCheckedChange = onShortsEnabledToggle
-        )
-
-        ShortsWarningCard()
-
-        HintText(stringResource(R.string.ob_off_hint))
-    }
-}
-
-/**
- * Deliberate friction before enabling the Shorts swipe player: endless
- * short-form feeds are engineered to be compulsive, so Koda ships it off and
- * warns before the user opts in.
- */
-@Composable
-private fun ShortsWarningCard() {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.errorContainer,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.WarningAmber,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(14.dp))
-            Text(
-                text = stringResource(R.string.ob_shorts_warning),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-        }
     }
 }
 

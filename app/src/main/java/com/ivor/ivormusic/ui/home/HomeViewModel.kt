@@ -18,6 +18,9 @@ import com.ivor.ivormusic.data.PlaylistPageInfo
 import com.ivor.ivormusic.data.VideoPlaylist
 import com.ivor.ivormusic.data.YouTubeRepository
 import com.ivor.ivormusic.data.LikedSongsRepository
+import com.ivor.ivormusic.data.vk.VkCatalog
+import com.ivor.ivormusic.data.vk.VkMusicRepository
+import com.ivor.ivormusic.data.vk.VkPlaylist
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +47,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<Application>()
     private val localRepository = SongRepository(application)
     private val youtubeRepository = YouTubeRepository(application)
+    private val vkRepository = VkMusicRepository(application)
     private val playlistRepository = com.ivor.ivormusic.data.PlaylistRepository(application)
     private val sessionManager = SessionManager(application)
     private val searchHistoryRepository = com.ivor.ivormusic.data.SearchHistoryRepository(application)
@@ -127,6 +131,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _youtubeSongs = MutableStateFlow<List<Song>>(emptyList())
     val youtubeSongs: StateFlow<List<Song>> = _youtubeSongs.asStateFlow()
+    private var vkCatalog = VkCatalog()
+    private val vkSearchEntities = mutableMapOf<String, List<Song>>()
     
 
 
@@ -137,15 +143,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * rejected reads as disconnected, so account-only screens offer the sign-in
      * wall instead of sitting on an empty list with no explanation.
      */
-    val isYouTubeConnected: StateFlow<Boolean> =
-        combine(_isYouTubeConnected, SessionManager.sessionExpired) { connected, expired ->
-            connected && !expired
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val isYouTubeConnected: StateFlow<Boolean> = _isYouTubeConnected.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _likedSongs = MutableStateFlow<List<Song>>(emptyList())
+    val vkLibrarySongs: StateFlow<List<Song>> = _likedSongs.asStateFlow()
     // Combine YouTube liked songs with manually liked songs (local or YT)
     private val likedSongsRepository = LikedSongsRepository(application)
     
@@ -590,10 +594,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
 
     init {
-        observeLocalVideoHistory()
-        observeSubscriptionFeedWarmup()
         checkYouTubeConnection()
-        observeProfileSwitches()
     }
 
     /**
@@ -1420,12 +1421,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkYouTubeConnection() {
         viewModelScope.launch {
-            _isYouTubeConnected.value = sessionManager.isLoggedIn()
+            _isYouTubeConnected.value = vkRepository.isSignedIn
             if (_isYouTubeConnected.value) {
-                youtubeRepository.fetchAccountInfo()
-                _userAvatar.value = sessionManager.getUserAvatar()
-                _userName.value = sessionManager.getUserName()
                 loadLibraryData()
+            }
+        }
+    }
+
+    fun signInVk(cookieP: String, remixSid: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                vkRepository.signIn(cookieP, remixSid)
+                _isYouTubeConnected.value = true
+                applyVkCatalog(vkRepository.loadCatalog())
+            } catch (error: Exception) {
+                KLog.e("HomeViewModel", "VK sign-in failed", error)
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -1433,37 +1446,55 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadLibraryData() {
         viewModelScope.launch {
             try {
-                _likedSongs.value = youtubeRepository.getLikedMusic()
-                _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
-            } catch (e: Exception) { }
+                applyVkCatalog(vkRepository.loadCatalog())
+            } catch (e: Exception) {
+                KLog.e("HomeViewModel", "VK library failed to load", e)
+            }
         }
+    }
+
+    private fun applyVkCatalog(catalog: VkCatalog) {
+        vkCatalog = catalog
+        _likedSongs.value = catalog.library.distinctBy { it.id }
+        _youtubePlaylists.value = catalog.playlists.distinctBy { it.ownerId to it.id }.map { it.toDisplayItem() }
+        val mix = catalog.sections.firstOrNull {
+            it.title.contains("mix", ignoreCase = true) || it.title.contains("микс", ignoreCase = true)
+        }?.songs.orEmpty().ifEmpty {
+            catalog.sections.firstOrNull { it.songs.isNotEmpty() }?.songs.orEmpty()
+        }
+        if (mix.isNotEmpty()) _youtubeSongs.value = mix.distinctBy { it.id }
+    }
+
+    private fun VkPlaylist.toDisplayItem() = PlaylistDisplayItem(
+        name = title,
+        url = "vkplaylist:$ownerId:$id:${accessKey.orEmpty()}",
+        uploaderName = "VK Music",
+        itemCount = count,
+        thumbnailUrl = artworkUrl,
+        description = description,
+    )
+
+    private fun vkPlaylist(id: String): VkPlaylist? {
+        val parts = id.removePrefix("vkplaylist:").split(':', limit = 3)
+        val ownerId = parts.getOrNull(0)?.toLongOrNull() ?: return null
+        val playlistId = parts.getOrNull(1)?.toLongOrNull() ?: return null
+        return vkCatalog.playlists.firstOrNull { it.ownerId == ownerId && it.id == playlistId }
+            ?: VkPlaylist(
+                id = playlistId,
+                ownerId = ownerId,
+                title = "Playlist",
+                accessKey = parts.getOrNull(2)?.takeIf { it.isNotBlank() },
+            )
     }
 
     fun loadYouTubeRecommendations() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                if (sessionManager.isLoggedIn()) {
-                    val recs = youtubeRepository.getRecommendations()
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                    }
-                } else {
-                    // Not logged in: personalize from the local taste profile
-                    // (play history, likes, searches). Falls back to trending
-                    // internally when there's no listening data yet.
-                    val recs = recommendationEngine.getHomeRecommendations()
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                    }
-                }
+                _isYouTubeConnected.value = vkRepository.isSignedIn
+                if (vkRepository.isSignedIn) applyVkCatalog(vkRepository.loadCatalog())
             } catch (e: Exception) {
-                // The feed keeps whatever it already had - both branches above
-                // only assign a non-empty result - so a failure here is not
-                // destructive and does not warrant tearing the screen down.
-                // It does have to be visible in a bug report though, which is
-                // what this was missing.
-                KLog.e("HomeViewModel", "Home recommendations failed to load", e)
+                KLog.e("HomeViewModel", "VK recommendations failed to load", e)
             } finally {
                 _isLoading.value = false
             }
@@ -1473,7 +1504,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun searchYouTube(query: String): List<Song> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.search(query)
+            vkRepository.search(query).distinctBy { it.id }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1482,7 +1513,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun loadMoreResults(query: String): List<Song> {
         if (query.isBlank()) return emptyList()
         return try {
-            youtubeRepository.searchNext(query)
+            vkRepository.search(query, offset = 50).distinctBy { it.id }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1516,12 +1547,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (localPlaylist != null) {
             return localPlaylist.songs
         }
-        // Fallback to YouTube
-        return try {
-            youtubeRepository.getPlaylist(playlistId)
-        } catch (e: Exception) {
-            emptyList()
-        }
+        vkSearchEntities[playlistId]?.let { return it }
+        val playlist = vkPlaylist(playlistId) ?: return emptyList()
+        return try { vkRepository.getPlaylist(playlist).songs } catch (e: Exception) { emptyList() }
 
     }
     
@@ -1532,102 +1560,72 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun searchArtists(query: String): List<ArtistItem> {
         if (query.isBlank()) return emptyList()
-        return try {
-            youtubeRepository.searchArtists(query)
-        } catch (e: Exception) {
-            emptyList()
+        return searchYouTube(query).groupBy { it.artist }.map { (artist, songs) ->
+            vkSearchEntities["vkartist:$artist"] = songs
+            ArtistItem(id = artist, name = artist, thumbnailUrl = songs.firstNotNullOfOrNull { it.thumbnailUrl })
         }
     }
 
     suspend fun searchAlbums(query: String): List<PlaylistDisplayItem> {
         if (query.isBlank()) return emptyList()
-        return try {
-            youtubeRepository.searchAlbums(query)
-        } catch (e: Exception) {
-            emptyList()
+        return searchYouTube(query).filter { it.album.isNotBlank() }.groupBy { it.album }.map { (album, songs) ->
+            val id = "vkalbum:${album}:${songs.first().artist}"
+            vkSearchEntities[id] = songs
+            PlaylistDisplayItem(album, id, songs.first().artist, songs.size, songs.firstNotNullOfOrNull { it.thumbnailUrl })
         }
     }
 
     suspend fun searchPlaylists(query: String): List<PlaylistDisplayItem> {
         if (query.isBlank()) return emptyList()
-        return try {
-            youtubeRepository.searchPlaylists(query)
-        } catch (e: Exception) {
-            emptyList()
+        if (vkCatalog.playlists.isEmpty() && vkRepository.isSignedIn) {
+            runCatching { applyVkCatalog(vkRepository.loadCatalog()) }
         }
+        return vkCatalog.playlists.filter { it.title.contains(query, ignoreCase = true) }.map { it.toDisplayItem() }
     }
 
     /**
      * Search for songs by a specific artist on YouTube Music.
      */
     suspend fun searchArtistSongs(artistName: String): List<Song> {
-        return try {
-            youtubeRepository.search(artistName)
-        } catch (e: Exception) {
-            emptyList()
+        return vkSearchEntities["vkartist:$artistName"] ?: searchYouTube(artistName).filter {
+            it.artist.equals(artistName, ignoreCase = true)
         }
     }
 
     suspend fun getArtistDetails(artistId: String): Pair<List<Song>, List<PlaylistDisplayItem>> {
-        return try {
-            youtubeRepository.getArtistDetails(artistId)
-        } catch (e: Exception) {
-            Pair(emptyList(), emptyList())
+        val songs = searchArtistSongs(artistId)
+        val albums = songs.filter { it.album.isNotBlank() }.groupBy { it.album }.map { (album, albumSongs) ->
+            val id = "vkalbum:${album}:$artistId"
+            vkSearchEntities[id] = albumSongs
+            PlaylistDisplayItem(album, id, artistId, albumSongs.size, albumSongs.firstNotNullOfOrNull { it.thumbnailUrl })
         }
+        return songs to albums
     }
 
     /** Related-songs radio seeded from a YouTube video id (works logged out). */
     suspend fun getRadioSongs(videoId: String): List<Song> {
-        return try {
-            youtubeRepository.getRelatedSongs(videoId)
-        } catch (e: Exception) {
-            emptyList()
-        }
+        val seed = (_youtubeSongs.value + _likedSongs.value).firstOrNull { it.id == videoId } ?: return emptyList()
+        return searchYouTube(seed.artist).filterNot { it.id == seed.id }
     }
     
     fun logout() {
-        sessionManager.clearSession()
+        vkRepository.signOut()
         _isYouTubeConnected.value = false
         _userAvatar.value = null
         _userName.value = null
         _youtubeSongs.value = emptyList()
         _likedSongs.value = emptyList()
         _youtubePlaylists.value = emptyList()
-        // The Subscriptions tab no longer empties itself on sign-out - local
-        // subscriptions outlive the session - so the account's half has to be
-        // dropped explicitly, or it would sit there unreachable and stale.
-        _accountChannels.value = emptyList()
-        _subscriptionFeed.value = emptyList()
-        loadSubscriptionFeed(force = true)
+        vkCatalog = VkCatalog()
     }
 
     fun refresh(excludedFolders: Set<String> = emptySet(), manualScan: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                _isYouTubeConnected.value = sessionManager.isLoggedIn()
+                _isYouTubeConnected.value = vkRepository.isSignedIn
                 if (_isYouTubeConnected.value) {
-                    // Fetch account info and avatar sync
-                    youtubeRepository.fetchAccountInfo()
-                    _userAvatar.value = sessionManager.getUserAvatar()
-                    
-                    // Fetch personalized recommendations (order preserved from YTM)
-                    val recs = youtubeRepository.getRecommendations()
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                    }
-                    
-                    // Update library data
-                    _likedSongs.value = youtubeRepository.getLikedMusic()
-                    _youtubePlaylists.value = youtubeRepository.getUserPlaylists()
-                } else if (_youtubeSongs.value.isNotEmpty()) {
-                    // Logged-out YouTube mode: refresh the taste-based feed too.
-                    // (Gated on a non-empty feed so local-only users don't pay
-                    // for network searches on every pull-to-refresh.)
-                    val recs = recommendationEngine.getHomeRecommendations()
-                    if (recs.isNotEmpty()) {
-                        _youtubeSongs.value = recs
-                    }
+                    applyVkCatalog(vkRepository.loadCatalog())
                 }
                 // Reload local songs with exclusions and playlists
                 playlistRepository.refreshPlaylists()
@@ -2024,7 +2022,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createLocalPlaylist(name: String, description: String?) {
         viewModelScope.launch {
-            playlistRepository.createPlaylist(name, description, coverSeedColors())
+            if (vkRepository.isSignedIn) {
+                runCatching { vkRepository.createPlaylist(name, description.orEmpty()) }
+                    .onSuccess { created ->
+                        vkCatalog = vkCatalog.copy(playlists = (listOf(created) + vkCatalog.playlists).distinctBy { it.ownerId to it.id })
+                        _youtubePlaylists.value = vkCatalog.playlists.map { it.toDisplayItem() }
+                    }
+            } else {
+                playlistRepository.createPlaylist(name, description, coverSeedColors())
+            }
         }
     }
 
@@ -2080,10 +2086,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
-            val ok = youtubeRepository.renameYouTubePlaylist(
-                playlistId, trimmed, music = true, description = description
-            )
-            if (ok) {
+            val playlist = vkPlaylist(playlistId) ?: return@launch
+            if (runCatching { vkRepository.editPlaylist(playlist, trimmed, description.orEmpty()) }.isSuccess) {
+                vkCatalog = vkCatalog.copy(playlists = vkCatalog.playlists.map {
+                    if (it.ownerId == playlist.ownerId && it.id == playlist.id) it.copy(title = trimmed, description = description.orEmpty()) else it
+                })
                 _youtubePlaylists.value = _youtubePlaylists.value.map {
                     if (it.id == playlistId) it.copy(name = trimmed, description = description) else it
                 }
@@ -2096,8 +2103,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val previous = _youtubePlaylists.value
         _youtubePlaylists.value = previous.filterNot { it.id == playlistId }
         viewModelScope.launch {
-            if (!youtubeRepository.deleteYouTubePlaylist(playlistId, music = true)) {
+            val playlist = vkPlaylist(playlistId)
+            if (playlist == null || runCatching { vkRepository.deletePlaylist(playlist) }.isFailure) {
                 _youtubePlaylists.value = previous
+            } else {
+                vkCatalog = vkCatalog.copy(playlists = vkCatalog.playlists.filterNot {
+                    it.ownerId == playlist.ownerId && it.id == playlist.id
+                })
             }
         }
     }
@@ -2105,7 +2117,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Remove a song from a YouTube Music playlist ("LM" removes the like). */
     fun removeSongFromYouTubePlaylist(playlistId: String, song: Song) {
         viewModelScope.launch {
-            youtubeRepository.removeFromYouTubePlaylist(playlistId, song.id, music = true)
+            vkPlaylist(playlistId)?.let { vkRepository.removeFromPlaylist(it, song) }
         }
     }
 
@@ -2115,7 +2127,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * the same video may appear more than once; empty when signed out/failure.
      */
     suspend fun fetchYouTubePlaylistSetVideoIds(playlistId: String): Map<String, List<String>> =
-        youtubeRepository.getPlaylistSetVideoIds(playlistId)
+        emptyMap()
 
     /**
      * Move a row of a YouTube Music playlist before the row identified by
@@ -2126,9 +2138,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         playlistId: String,
         setVideoId: String,
         successorSetVideoId: String?
-    ): Boolean = youtubeRepository.moveInYouTubePlaylist(
-        playlistId, setVideoId, successorSetVideoId, music = true
-    )
+    ): Boolean = false
 
     // Stats
     private val statsRepository = com.ivor.ivormusic.data.StatsRepository(application)

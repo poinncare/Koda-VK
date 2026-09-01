@@ -645,22 +645,6 @@ internal fun PlaybackSettingsPage(
                         showChevron = true
                     )
 
-                    SettingsDivider()
-
-                    SettingsRow(
-                        icon = Icons.Rounded.VideoLibrary,
-                        title = stringResource(R.string.sp_video_quality),
-                        subtitle = videoQualityLabel(
-                            if (showingWifi) videoQualityWifi else videoQualityMobile
-                        ),
-                        onClick = {
-                            onOpenQualityPicker(
-                                if (showingWifi) QualityDialogTarget.VIDEO_WIFI
-                                else QualityDialogTarget.VIDEO_MOBILE
-                            )
-                        },
-                        showChevron = true
-                    )
                 }
             }
         }
@@ -733,26 +717,6 @@ internal fun PlaybackSettingsPage(
             }
         }
 
-        item {
-            SettingsSection(title = "Video") {
-                SettingsCard {
-                    // The fullscreen brightness drag. Default keeps the
-                    // behaviour the player has always had; off means every
-                    // fullscreen video reopens at the system level.
-                    SettingsToggleRow(
-                        icon = Icons.Rounded.BrightnessMedium,
-                        title = "Remember fullscreen brightness",
-                        subtitle = if (rememberVideoBrightness) {
-                            "Videos reopen at the brightness you last set"
-                        } else {
-                            "Videos reopen at the system brightness"
-                        },
-                        enabled = rememberVideoBrightness,
-                        onToggle = onRememberVideoBrightnessToggle
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -1253,7 +1217,7 @@ internal fun LocalLibrarySettingsPage(
                         subtitle = if (loadLocalSongs) {
                             "Shows songs from your device"
                         } else {
-                            "YouTube Music only"
+                            "VK Music only"
                         },
                         enabled = loadLocalSongs,
                         onToggle = onLoadLocalSongsToggle

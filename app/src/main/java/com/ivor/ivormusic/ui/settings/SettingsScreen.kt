@@ -569,7 +569,26 @@ fun SettingsScreen(
         onNavigateToReportBug = onNavigateToReportBug,
         onNavigateToTimeLimit = onNavigateToTimeLimit,
         supportsLiveUpdates = ThemePreferences.SUPPORTS_LIVE_UPDATES
-    )
+    ).filterNot { entry ->
+        entry.id in setOf(
+            "sponsorblock",
+            "video_q_wifi",
+            "video_q_mobile",
+            "video_brightness",
+            "upload_notifications",
+            "local_only",
+            "content_mode",
+            "home_toggle",
+            "timed_comments",
+            "shorts",
+            "shorts_buttons",
+            "not_interested",
+            "manage_subs",
+            "subs_source",
+            "subs_target",
+            "fast_subs",
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -1180,42 +1199,8 @@ private fun SettingsHub(
                         SettingsHubRow(
                             icon = Icons.Rounded.GraphicEq,
                             title = stringResource(R.string.settings_playback_and_quality),
-                            value = "${musicQualityLabel(musicQualityWifi)} music, " +
-                                "${videoQualityLabel(videoQualityWifi)} video on Wi-Fi",
+                            value = "${musicQualityLabel(musicQualityWifi)} music on Wi-Fi",
                             onClick = { onOpenPage(SettingsPage.PLAYBACK) }
-                        )
-                        SettingsDivider()
-                        SettingsHubRow(
-                            icon = Icons.Rounded.VideoLibrary,
-                            title = stringResource(R.string.settings_content_and_feeds),
-                            value = contentValue,
-                            onClick = { onOpenPage(SettingsPage.CONTENT) }
-                        )
-                        SettingsDivider()
-                        SettingsHubRow(
-                            icon = Icons.Rounded.Subscriptions,
-                            title = stringResource(R.string.settings_subscriptions),
-                            value = subscriptionSourceLabel(subscriptionSource),
-                            onClick = { onOpenPage(SettingsPage.SUBSCRIPTIONS) }
-                        )
-                        SettingsDivider()
-                        SettingsHubRow(
-                            icon = Icons.Rounded.MoneyOff,
-                            title = stringResource(R.string.sb_title),
-                            // The live value is how many categories will
-                            // actually act, which is the thing that varies
-                            // once it is on - "On" alone says nothing.
-                            value = if (!sponsorBlockEnabled) {
-                                stringResource(R.string.haptic_level_off)
-                            } else {
-                                val active = sponsorBlockActions.count {
-                                    it.value != SegmentAction.IGNORE
-                                }
-                                pluralStringResource(
-                                    R.plurals.sb_active_categories, active, active
-                                )
-                            },
-                            onClick = { onOpenPage(SettingsPage.SPONSORBLOCK) }
                         )
                     }
                 }

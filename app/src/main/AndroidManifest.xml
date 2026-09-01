@@ -43,7 +43,6 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"
-            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.App.Starting"
             tools:ignore="LockedOrientationActivity">
             <intent-filter>
@@ -82,22 +81,6 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaLibraryService"/>
                 <action android:name="android.media.browse.MediaBrowserService"/>
-            </intent-filter>
-        </service>
-
-        <!--
-            Puts video playback on the lock screen, in the shade's media area
-            and on Bluetooth/headset transport buttons. The ExoPlayer itself
-            stays owned by VideoPlayerViewModel; this service only wraps it in
-            a MediaSession, which is also what makes background video audio a
-            legitimate foreground service rather than an unannounced one.
-        -->
-        <service
-            android:name=".service.VideoPlaybackService"
-            android:foregroundServiceType="mediaPlayback"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService"/>
             </intent-filter>
         </service>
 

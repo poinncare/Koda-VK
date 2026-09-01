@@ -181,10 +181,22 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
 
     /** Fetch the user's YouTube playlists for the Add to Playlist sheet (once per session). */
     fun loadYouTubePlaylistsForSheet() {
-        if (_youtubeAddablePlaylists.value.isNotEmpty() || !youTubeRepository.isLoggedIn()) return
+        if (_youtubeAddablePlaylists.value.isNotEmpty() || !vkMusicRepository.isSignedIn) return
         viewModelScope.launch {
-            _youtubeAddablePlaylists.value = youTubeRepository.getUserPlaylists()
-                .filter { it.id.startsWith("PL") }
+            _youtubeAddablePlaylists.value = runCatching { vkMusicRepository.loadCatalog() }
+                .getOrNull()
+                ?.playlists
+                ?.filter { it.canEdit }
+                ?.map {
+                    com.ivor.ivormusic.data.PlaylistDisplayItem(
+                        name = it.title,
+                        url = "vkplaylist:${it.ownerId}:${it.id}:${it.accessKey.orEmpty()}",
+                        uploaderName = "VK Music",
+                        itemCount = it.count,
+                        thumbnailUrl = it.artworkUrl,
+                        description = it.description,
+                    )
+                }.orEmpty()
         }
     }
         
@@ -1442,12 +1454,27 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
      */
     fun createPlaylistWithSong(name: String, description: String?, song: Song) {
         viewModelScope.launch {
-            val id = playlistRepository.createPlaylist(
-                name,
-                description,
-                com.ivor.ivormusic.ui.theme.playlistCoverSeeds(context)
-            )
-            playlistRepository.addSongToPlaylist(id, song)
+            if (song.source == com.ivor.ivormusic.data.SongSource.VK && vkMusicRepository.isSignedIn) {
+                val playlist = vkMusicRepository.createPlaylist(name, description.orEmpty())
+                vkMusicRepository.addToPlaylist(playlist, song)
+                _youtubeAddablePlaylists.value = listOf(
+                    com.ivor.ivormusic.data.PlaylistDisplayItem(
+                        name = playlist.title,
+                        url = "vkplaylist:${playlist.ownerId}:${playlist.id}:${playlist.accessKey.orEmpty()}",
+                        uploaderName = "VK Music",
+                        itemCount = 1,
+                        thumbnailUrl = playlist.artworkUrl,
+                        description = playlist.description,
+                    )
+                ) + _youtubeAddablePlaylists.value
+            } else {
+                val id = playlistRepository.createPlaylist(
+                    name,
+                    description,
+                    com.ivor.ivormusic.ui.theme.playlistCoverSeeds(context)
+                )
+                playlistRepository.addSongToPlaylist(id, song)
+            }
         }
     }
 
@@ -1457,9 +1484,20 @@ class PlayerViewModel(private val context: Context) : ViewModel() {
             val isLocal = playlistRepository.userPlaylists.value.any { it.id == playlistId }
             if (isLocal) {
                 playlistRepository.addSongToPlaylist(playlistId, song)
-            } else if (song.source == com.ivor.ivormusic.data.SongSource.YOUTUBE) {
-                // YouTube playlist target: the song id is the videoId
-                youTubeRepository.addToYouTubePlaylist(playlistId, song.id, music = true)
+            } else if (song.source == com.ivor.ivormusic.data.SongSource.VK && playlistId.startsWith("vkplaylist:")) {
+                val parts = playlistId.removePrefix("vkplaylist:").split(':', limit = 3)
+                val ownerId = parts.getOrNull(0)?.toLongOrNull() ?: return@launch
+                val id = parts.getOrNull(1)?.toLongOrNull() ?: return@launch
+                vkMusicRepository.addToPlaylist(
+                    com.ivor.ivormusic.data.vk.VkPlaylist(
+                        id = id,
+                        ownerId = ownerId,
+                        title = "Playlist",
+                        accessKey = parts.getOrNull(2)?.takeIf { it.isNotBlank() },
+                        canEdit = true,
+                    ),
+                    song,
+                )
             }
         }
     }

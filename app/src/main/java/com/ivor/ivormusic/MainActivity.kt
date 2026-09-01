@@ -575,179 +575,9 @@ fun MusicApp(
     }
     val homeViewModel: HomeViewModel = viewModel()
 
-    val videoPlayerViewModel: com.ivor.ivormusic.ui.video.VideoPlayerViewModel = viewModel()
-    val shortsPlayerViewModel: com.ivor.ivormusic.ui.shorts.ShortsPlayerViewModel = viewModel()
-
-    // Changing content modes is a clean hand-off: no player from the previous
-    // mode should remain visible or continue playing after the switch. Route
-    // every mode toggle through the same close actions used by the players'
-    // own dismiss buttons, while ignoring callbacks that repeat the current
-    // value (including preference restoration during composition).
-    val switchPlaybackMode: (Boolean) -> Unit = { nextVideoMode ->
-        if (nextVideoMode != videoMode) {
-            playerViewModel.clearPlayer()
-            videoPlayerViewModel.closePlayer()
-            shortsPlayerViewModel.close()
-            onVideoModeToggle(nextVideoMode)
-        }
-    }
-
-    // A live broadcast that turned up in the Shorts feed. The Shorts player
-    // cannot present one honestly (no chat, and a seek bar for a duration that
-    // does not exist), so it closes itself and the stream reopens here, where
-    // the vertical live layout lives.
-    androidx.compose.runtime.LaunchedEffect(shortsPlayerViewModel) {
-        shortsPlayerViewModel.liveHandoff.collect { liveVideo ->
-            videoPlayerViewModel.playVideo(liveVideo)
-        }
-    }
-
-    /**
-     * Opens a creator's page from anywhere: a feed card, a search result, the
-     * player's channel row, the Subscriptions tab, or a shared link.
-     *
-     * **The two overlays step out of the way rather than being drawn over.**
-     * The channel screen is a NavHost destination, and both players live above
-     * the NavHost, so an expanded video player would simply cover it. Dropping
-     * the video to its mini bar is also the behaviour worth having on its own
-     * merits: the video keeps playing while its creator's page is read, which
-     * is exactly what someone tapping a channel name mid-video wants. Shorts
-     * close outright, because that overlay is full-bleed with no minimised form
-     * to fall back to.
-     *
-     * `launchSingleTop` is deliberately absent: opening channel B from channel
-     * A's "Featured channels" shelf has to push a second entry, or back from B
-     * would leave the app rather than return to A.
-     */
-    val openChannel: (String) -> Unit = openChannel@{ channelId ->
-        if (channelId.isBlank()) return@openChannel
-        videoPlayerViewModel.setExpanded(false)
-        shortsPlayerViewModel.close()
-        navController.navigate("channel/${android.net.Uri.encode(channelId)}")
-    }
-
-    // One launch contract for every Shorts surface. The preference controls
-    // the Home shelf and the destination, not whether a Short exists elsewhere:
-    // channel pages keep their Shorts, but open them in the ordinary watch page
-    // when the endless swipe player is disabled.
-    val openShorts: (List<com.ivor.ivormusic.data.ShortsItem>, Int) -> Unit =
-        openShorts@{ shorts, index ->
-            if (shorts.isEmpty()) return@openShorts
-            val selectedShort = shorts.getOrNull(index.coerceIn(0, shorts.lastIndex))
-                ?: return@openShorts
-            if (!shortsEnabled) {
-                shortsPlayerViewModel.close()
-                videoPlayerViewModel.playVideo(selectedShort.toVideoItem())
-                return@openShorts
-            }
-            videoPlayerViewModel.exoPlayer?.pause()
-            shortsPlayerViewModel.open(shorts, index)
-        }
-
-    // Music, video and Shorts are mutually exclusive: whichever pipeline
-    // starts playing pauses the other two. System audio focus alone is not
-    // reliable between players inside the same app, so this is enforced
-    // explicitly. Each effect only fires on a transition to playing, so
-    // pausing one player never re-triggers the others.
-    val isMusicPlaying by playerViewModel.isPlaying.collectAsState()
-    val isVideoPlaying by videoPlayerViewModel.isPlaying.collectAsState()
-    val isShortsPlaying by shortsPlayerViewModel.isPlaying.collectAsState()
     val pendingSongDownload by playerViewModel.pendingSongDownload.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(isMusicPlaying) {
-        if (isMusicPlaying) {
-            videoPlayerViewModel.pause()
-            shortsPlayerViewModel.pause()
-        }
-    }
-    androidx.compose.runtime.LaunchedEffect(isVideoPlaying) {
-        if (isVideoPlaying) {
-            playerViewModel.pause()
-            shortsPlayerViewModel.pause()
-        }
-    }
-    androidx.compose.runtime.LaunchedEffect(isShortsPlaying) {
-        if (isShortsPlaying) {
-            playerViewModel.pause()
-            videoPlayerViewModel.pause()
-        }
-    }
-
-    // Video overlay state, needed by HomeScreen so bottom-anchored UI (FABs)
-    // and the music mini player can stay clear of the video mini player.
-    val overlayVideo by videoPlayerViewModel.currentVideo.collectAsState()
-    val isVideoOverlayExpanded by videoPlayerViewModel.isExpanded.collectAsState()
-    val hasVideoMiniPlayer = overlayVideo != null && !isVideoOverlayExpanded
-    val musicPillVisible = playerViewModel.currentSong.collectAsState().value != null
-
-    // The floating nav bar and the music pill both live inside HomeScreen, so
-    // they exist on the "home" route and nowhere else. The video overlay is
-    // drawn above the NavHost and therefore renders on every route, so it has
-    // to be told what is actually underneath it rather than assuming: reserving
-    // their height unconditionally is what left the video mini bar hovering in
-    // empty space over Settings, Downloads, Stats and channel pages.
-    val currentRoute = navController.currentBackStackEntryAsState()
-        .value?.destination?.route
-    val onHomeRoute = currentRoute == "home"
-    val navBarReserve = if (nonExpressiveNavigationBar) {
-        NON_EXPRESSIVE_NAV_BAR_RESERVE
-    } else {
-        EXPRESSIVE_NAV_BAR_RESERVE
-    }
-    val videoMiniBottomChrome = when {
-        !onHomeRoute -> 0.dp
-        // Stacked above the music pill rather than on top of it, when both
-        // players are alive at once.
-        musicPillVisible -> navBarReserve + MUSIC_PILL_RESERVE
-        else -> navBarReserve
-    }
-
-    // Keep the Activity's PiP inputs current. It needs them outside the
-    // composition, in onUserLeaveHint on Android 11. Match the same proven 4.5
-    // eligibility used by VideoPipController: bounds and playback state are not
-    // prerequisites for entering PiP.
     androidx.compose.runtime.SideEffect {
-        onPipStateChanged(overlayVideo != null && isVideoOverlayExpanded)
-    }
-
-    // Keep the ViewModel's PiP flag current so it can suppress auto-play
-    // (advancing to the next video while in PiP means the user returns to
-    // a video they did not put there).
-    androidx.compose.runtime.LaunchedEffect(isInPipMode) {
-        videoPlayerViewModel.setInPipMode(isInPipMode)
-    }
-
-    // Opens YouTube links shared into the app. Composed above the PiP
-    // early return so its remembered deduplication token survives PiP
-    // transitions; disabled while in PiP so it does not try to navigate
-    // or start a new video inside the tiny window.
-    SharedLinkHandler(
-        pendingLink = pendingSharedLink,
-        enabled = onboardingCompleted && !isInPipMode,
-        localOnlyMode = localOnlyMode,
-        homeViewModel = homeViewModel,
-        playerViewModel = playerViewModel,
-        videoPlayerViewModel = videoPlayerViewModel,
-        onNavigateHome = {
-            navController.navigate("home") {
-                popUpTo("home") { inclusive = false }
-                launchSingleTop = true
-            }
-        },
-        onOpenChannel = openChannel
-    )
-
-    // Drives the PiP window's shape and its transport controls. Composed above
-    // the early return so the package-scoped receiver remains alive when the
-    // normal app UI is replaced by the dedicated video-only PiP surface.
-    com.ivor.ivormusic.ui.video.VideoPipController(viewModel = videoPlayerViewModel)
-
-    // In system PiP the app is just a video surface. Returning here keeps the
-    // NavHost, both players and every overlay out of the composition entirely,
-    // rather than letting them draw and animate behind a window nobody can see
-    // them in.
-    if (isInPipMode) {
-        com.ivor.ivormusic.ui.video.PipVideoSurface(viewModel = videoPlayerViewModel)
-        return
+        onPipStateChanged(false)
     }
 
     Box(
@@ -768,7 +598,7 @@ fun MusicApp(
                     ambientBackground = ambientBackground,
                     onAmbientBackgroundToggle = onAmbientBackgroundToggle,
                     videoMode = videoMode,
-                    onVideoModeToggle = switchPlaybackMode,
+                    onVideoModeToggle = onVideoModeToggle,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleEnabledChange = onHomeModeToggleEnabledChange,
                     shortsEnabled = shortsEnabled,
@@ -792,16 +622,29 @@ fun MusicApp(
             }
 
             composable("home") {
-                com.ivor.ivormusic.ui.vk.VkMusicScreen(
+                HomeScreen(
+                    onSongClick = { song -> playerViewModel.playSong(song) },
                     playerViewModel = playerViewModel,
-                    ambientBackground = ambientBackground,
-                    artworkColors = playerArtworkColors,
-                    playerStyle = playerStyle,
-                    onPlayerStyleChange = onPlayerStyleChange,
+                    viewModel = homeViewModel,
                     isDarkMode = isDarkMode,
-                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
+                    onThemeToggle = onThemeToggle,
                     onNavigateToSettings = { navController.navigate("settings") },
                     onNavigateToDownloads = { navController.navigate("downloads") },
+                    onNavigateToStats = { navController.navigate("stats") },
+                    onNavigateToUpdate = { navController.navigate("update") },
+                    loadLocalSongs = loadLocalSongs,
+                    excludedFolders = excludedFolders,
+                    ambientBackground = ambientBackground,
+                    playerArtworkColors = playerArtworkColors,
+                    videoMode = false,
+                    showModeToggle = false,
+                    playerStyle = playerStyle,
+                    onPlayerStyleChange = onPlayerStyleChange,
+                    manualScan = manualScanEnabled,
+                    localOnly = false,
+                    hasVideoMiniPlayer = false,
+                    spotlightHome = spotlightHome,
+                    nonExpressiveNavigationBar = nonExpressiveNavigationBar,
                 )
             }
             composable(
@@ -830,7 +673,7 @@ fun MusicApp(
                     playerArtworkColors = playerArtworkColors,
                     onPlayerArtworkColorsToggle = onPlayerArtworkColorsToggle,
                     videoMode = videoMode,
-                    onVideoModeToggle = switchPlaybackMode,
+                    onVideoModeToggle = onVideoModeToggle,
                     homeModeToggleEnabled = homeModeToggleEnabled,
                     onHomeModeToggleChange = onHomeModeToggleEnabledChange,
                     spotlightHome = spotlightHome,
@@ -937,22 +780,6 @@ fun MusicApp(
                 )
             }
             composable(
-                route = "subscriptions",
-                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
-                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
-                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
-                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
-            ) {
-                com.ivor.ivormusic.ui.video.SubscriptionsManagerScreen(
-                    viewModel = homeViewModel,
-                    onBack = { navController.popBackStack() },
-                    // The sign-in dialog lives on the home screen, so a login
-                    // ask from here has to go back for it rather than opening a
-                    // second WebView on top of a settings sub-screen.
-                    onLoginClick = { navController.popBackStack("home", inclusive = false) }
-                )
-            }
-            composable(
                 route = "backup",
                 enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
                 exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
@@ -964,63 +791,6 @@ fun MusicApp(
                 )
             }
             composable(
-                route = "not_interested",
-                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
-                exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
-                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
-                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
-            ) {
-                com.ivor.ivormusic.ui.video.NotInterestedScreen(
-                    viewModel = homeViewModel,
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            // A creator's page. The argument is normally a UC id, may be an
-            // @handle/full URL from a shared link, or a video:<id> fallback
-            // when a modern feed card omitted its creator endpoint. The screen
-            // resolves whichever it was given without starting that video.
-            composable(
-                route = "channel/{channelId}",
-                arguments = listOf(
-                    androidx.navigation.navArgument("channelId") {
-                        type = androidx.navigation.NavType.StringType
-                    }
-                ),
-                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
-                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 3 }) + fadeOut() },
-                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 3 }) + fadeIn() },
-                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
-            ) { entry ->
-                val channelArg = entry.arguments?.getString("channelId").orEmpty()
-                com.ivor.ivormusic.ui.channel.ChannelScreen(
-                    channelId = channelArg,
-                    homeViewModel = homeViewModel,
-                    onBack = { navController.popBackStack() },
-                    onPlayVideo = { video -> videoPlayerViewModel.playVideo(video) },
-                    onPlayQueue = { queue -> videoPlayerViewModel.playQueue(queue) },
-                    onOpenShorts = openShorts,
-                    // A channel opened from inside a channel is a new entry, so
-                    // back walks the trail of creators the user actually followed.
-                    onOpenChannel = openChannel,
-                    onEnqueueVideo = { video, playNext ->
-                        videoPlayerViewModel.enqueueVideo(video, playNext)
-                    },
-                    // The sign-in dialog lives on the home screen, so a login ask
-                    // from here goes back for it rather than opening a second
-                    // WebView on top of a detail screen - same rule as the
-                    // subscriptions manager above.
-                    onLoginClick = { navController.popBackStack("home", inclusive = false) },
-                    // The music artist page lives inside the Library tab rather
-                    // than on a route of its own, so the cross-link goes home
-                    // and asks for it; HomeScreen routes to the tab and clears
-                    // the request as it renders.
-                    onOpenMusicArtist = { _, name ->
-                        homeViewModel.requestArtistPage(name)
-                        navController.popBackStack("home", inclusive = false)
-                    }
-                )
-            }
-            composable(
                 route = "downloads",
                 enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
                 exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
@@ -1028,11 +798,10 @@ fun MusicApp(
                 popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() }
             ) {
                 val downloadedSongs by playerViewModel.downloadedSongs.collectAsState()
-                val downloadedVideos by playerViewModel.downloadedVideos.collectAsState()
                 val downloadProgress by playerViewModel.downloadProgress.collectAsState()
                 com.ivor.ivormusic.ui.downloads.DownloadsScreen(
                     downloadedSongs = downloadedSongs,
-                    downloadedVideos = downloadedVideos,
+                    downloadedVideos = emptyList(),
                     activeDownloads = downloadProgress,
                     onBack = { navController.popBackStack() },
                     onPlaySong = { song ->
@@ -1041,15 +810,11 @@ fun MusicApp(
                     onPlayQueue = { songs, song ->
                         playerViewModel.playQueue(songs, song)
                     },
-                    onPlayVideo = { videos, video ->
-                        videoPlayerViewModel.playDownloadedVideos(videos, video)
-                    },
+                    onPlayVideo = { _, _ -> },
                     onDeleteDownload = { songId ->
                         playerViewModel.deleteDownload(songId)
                     },
-                    onDeleteVideo = { videoId ->
-                        playerViewModel.deleteVideoDownload(videoId)
-                    },
+                    onDeleteVideo = {},
                     onCancelDownload = { songId ->
                         playerViewModel.cancelDownload(songId)
                     },
@@ -1133,23 +898,6 @@ fun MusicApp(
             }
         }
         
-        com.ivor.ivormusic.ui.video.VideoPlayerOverlay(
-            viewModel = videoPlayerViewModel,
-            timedCommentsEnabled = timedCommentsEnabled,
-            onOpenChannel = openChannel,
-            hostBottomChrome = videoMiniBottomChrome
-        )
-
-        // Shorts sit above everything, including the video player overlay. The
-        // host remains available because the setting hides only Home's shelf;
-        // the shared launch contract above decides between this swipe player
-        // and the ordinary video player for every other surface.
-        com.ivor.ivormusic.ui.shorts.ShortsPlayerOverlay(
-            viewModel = shortsPlayerViewModel,
-            hiddenActions = shortsHiddenActions,
-            onOpenChannel = openChannel
-        )
-
         // One confirmation host covers the player controls and every song
         // options sheet. Download requests carry the chosen song through the
         // PlayerViewModel so a non-playing row works even when no mini player
@@ -1161,21 +909,6 @@ fun MusicApp(
                 onDismiss = playerViewModel::dismissPendingSongDownload
             )
         }
-
-        // Undo for "don't recommend", app-wide and last in the stack.
-        //
-        // One host for the whole app rather than one per screen: the action can
-        // be taken from the home grid, the subscriptions feed, search, the
-        // player's Up Next list and Shorts, and two of those are overlays
-        // drawn above the NavHost. A per-screen snackbar would be hidden behind
-        // the Shorts overlay exactly when it is needed most, and could show
-        // twice when a screen and an overlay are both alive.
-        NotInterestedUndoHost(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = if (musicPillVisible) 96.dp else 16.dp)
-        )
 
         // Offer to report the crash from the previous run. Read once per
         // composition of MusicApp (an activity recreation re-reads the file,
@@ -1208,8 +941,6 @@ fun MusicApp(
         androidx.compose.runtime.LaunchedEffect(appTimeLocked) {
             if (appTimeLocked) {
                 playerViewModel.pause()
-                videoPlayerViewModel.pause()
-                shortsPlayerViewModel.pause()
             }
         }
         if (appTimeLocked && !isInPipMode) {

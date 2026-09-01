@@ -4,8 +4,11 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -14,6 +17,7 @@ import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -62,15 +66,21 @@ class VkAuthActivity : ComponentActivity() {
             settings.databaseEnabled = true
             settings.useWideViewPort = false
             settings.loadWithOverviewMode = false
-            settings.setSupportMultipleWindows(false)
+            settings.setSupportMultipleWindows(true)
             settings.saveFormData = false
             clearFormData()
             CookieManager.getInstance().apply {
                 setAcceptCookie(true)
                 setAcceptThirdPartyCookies(this@webViewSetup, true)
             }
-            webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {
+            val navigationClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                    openExternalLogin(request.url.toString(), view)
+
+                @Deprecated("Deprecated in Java")
+                override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
+                    openExternalLogin(url, view)
+
                 override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
                     view.evaluateJavascript(FORCE_LTR_INPUTS_SCRIPT, null)
@@ -80,6 +90,45 @@ class VkAuthActivity : ComponentActivity() {
                 override fun onLoadResource(view: WebView, url: String) {
                     super.onLoadResource(view, url)
                     updateSession()
+                }
+            }
+            webViewClient = navigationClient
+            webChromeClient = object : WebChromeClient() {
+                override fun onCreateWindow(
+                    view: WebView,
+                    isDialog: Boolean,
+                    isUserGesture: Boolean,
+                    resultMsg: Message,
+                ): Boolean {
+                    val popup = WebView(this@VkAuthActivity).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(
+                                popupView: WebView,
+                                request: WebResourceRequest,
+                            ): Boolean {
+                                val url = request.url.toString()
+                                if (openExternalLogin(url, this@webViewSetup)) return true
+                                this@webViewSetup.loadUrl(url)
+                                return true
+                            }
+
+                            @Deprecated("Deprecated in Java")
+                            override fun shouldOverrideUrlLoading(popupView: WebView, url: String): Boolean {
+                                if (openExternalLogin(url, this@webViewSetup)) return true
+                                this@webViewSetup.loadUrl(url)
+                                return true
+                            }
+                        }
+                    }
+                    (resultMsg.obj as? WebView.WebViewTransport)?.let { transport ->
+                        transport.webView = popup
+                        resultMsg.sendToTarget()
+                        return true
+                    }
+                    popup.destroy()
+                    return false
                 }
             }
         }
@@ -129,6 +178,14 @@ class VkAuthActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::webView.isInitialized) {
+            updateSession()
+            webView.evaluateJavascript(FORCE_LTR_INPUTS_SCRIPT, null)
+        }
+    }
+
     private fun updateSession() {
         val manager = CookieManager.getInstance()
         val found = parseVkAuthCookies(VK_COOKIE_URLS.mapNotNull(manager::getCookie))
@@ -136,6 +193,33 @@ class VkAuthActivity : ComponentActivity() {
             session = found
             completeButton.isEnabled = true
             completeButton.text = "Продолжить в Koda VK"
+        }
+    }
+
+    private fun openExternalLogin(url: String, fallbackView: WebView): Boolean {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        if (uri.scheme == "http" || uri.scheme == "https" || uri.scheme == "about") return false
+
+        val intent = if (uri.scheme == "intent") {
+            runCatching { Intent.parseUri(url, Intent.URI_INTENT_SCHEME) }.getOrNull()
+        } else {
+            Intent(Intent.ACTION_VIEW, uri)
+        }?.apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            component = null
+        } ?: return false
+
+        return try {
+            startActivity(intent)
+            true
+        } catch (_: ActivityNotFoundException) {
+            val fallback = intent.getStringExtra("browser_fallback_url")
+            if (!fallback.isNullOrBlank()) fallbackView.loadUrl(fallback)
+            true
+        } catch (_: SecurityException) {
+            val fallback = intent.getStringExtra("browser_fallback_url")
+            if (!fallback.isNullOrBlank()) fallbackView.loadUrl(fallback)
+            true
         }
     }
 
