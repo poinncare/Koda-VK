@@ -56,6 +56,15 @@ class VkMusicRepository(context: Context) {
 
     fun signOut() = sessionStore.clear()
 
+    suspend fun loadProfile(): VkProfile = withContext(Dispatchers.IO) {
+        val item = api("users.get", mapOf("fields" to "photo_200"))
+            .requireArray("response")
+            .objects()
+            .firstOrNull()
+            ?: throw IOException("VK returned no account profile")
+        parseProfile(item) ?: throw IOException("VK returned an invalid account profile")
+    }
+
     suspend fun loadCatalog(): VkCatalog = withContext(Dispatchers.IO) {
         val catalog = api("catalog.getAudio")
             .requireObject("response")
@@ -356,6 +365,19 @@ class VkMusicRepository(context: Context) {
             val parts = value.split(':', limit = 4)
             if (parts.size < 3) return null
             return Triple(parts[1].toLongOrNull() ?: return null, parts[2].toLongOrNull() ?: return null, parts.getOrNull(3))
+        }
+
+        internal fun parseProfile(item: JSONObject): VkProfile? {
+            val id = item.optLong("id", Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE } ?: return null
+            val name = listOf(item.optString("first_name"), item.optString("last_name"))
+                .filter(String::isNotBlank)
+                .joinToString(" ")
+                .ifBlank { "VK Music" }
+            return VkProfile(
+                id = id,
+                name = name,
+                avatarUrl = item.optString("photo_200").takeIf { it.startsWith("http") },
+            )
         }
     }
 }

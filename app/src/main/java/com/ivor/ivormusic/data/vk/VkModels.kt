@@ -9,6 +9,12 @@ data class VkSession(
     val remixSid: String,
 )
 
+data class VkProfile(
+    val id: Long,
+    val name: String,
+    val avatarUrl: String? = null,
+)
+
 data class VkSection(
     val id: String,
     val title: String,

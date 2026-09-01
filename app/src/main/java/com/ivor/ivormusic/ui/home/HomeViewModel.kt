@@ -21,11 +21,13 @@ import com.ivor.ivormusic.data.LikedSongsRepository
 import com.ivor.ivormusic.data.vk.VkCatalog
 import com.ivor.ivormusic.data.vk.VkMusicRepository
 import com.ivor.ivormusic.data.vk.VkPlaylist
+import com.ivor.ivormusic.data.vk.VkSessionStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
@@ -594,7 +596,49 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val isPlaylistVideosLoading: StateFlow<Boolean> = _isPlaylistVideosLoading.asStateFlow()
 
     init {
-        checkYouTubeConnection()
+        observeVkSession()
+    }
+
+    /**
+     * Every VK repository instance writes to the same encrypted session store,
+     * but HomeViewModel outlives the onboarding and Settings composables that
+     * perform sign-in. Observe the process-wide revision so a successful login
+     * immediately reloads account data instead of leaving Home in its original
+     * signed-out snapshot until the process is restarted.
+     */
+    private fun observeVkSession() {
+        viewModelScope.launch {
+            VkSessionStore.sessionRevision
+                .collectLatest { reloadVkAccount() }
+        }
+    }
+
+    private suspend fun reloadVkAccount() {
+        val signedIn = vkRepository.isSignedIn
+        _isYouTubeConnected.value = signedIn
+        if (!signedIn) {
+            _userAvatar.value = null
+            _userName.value = null
+            _youtubeSongs.value = emptyList()
+            _likedSongs.value = emptyList()
+            _youtubePlaylists.value = emptyList()
+            vkCatalog = VkCatalog()
+            return
+        }
+
+        _isLoading.value = true
+        try {
+            val profile = runCatching { vkRepository.loadProfile() }
+                .onFailure { KLog.w("HomeViewModel", "VK profile failed to load", it) }
+                .getOrNull()
+            _userName.value = profile?.name
+            _userAvatar.value = profile?.avatarUrl
+            applyVkCatalog(vkRepository.loadCatalog())
+        } catch (error: Exception) {
+            KLog.e("HomeViewModel", "VK account data failed to load", error)
+        } finally {
+            _isLoading.value = false
+        }
     }
 
     /**
@@ -1421,10 +1465,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun checkYouTubeConnection() {
         viewModelScope.launch {
-            _isYouTubeConnected.value = vkRepository.isSignedIn
-            if (_isYouTubeConnected.value) {
-                loadLibraryData()
-            }
+            reloadVkAccount()
         }
     }
 
@@ -1433,8 +1474,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             try {
                 vkRepository.signIn(cookieP, remixSid)
-                _isYouTubeConnected.value = true
-                applyVkCatalog(vkRepository.loadCatalog())
             } catch (error: Exception) {
                 KLog.e("HomeViewModel", "VK sign-in failed", error)
             } finally {

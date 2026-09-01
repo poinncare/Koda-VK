@@ -3,6 +3,8 @@ package com.ivor.ivormusic.data.vk
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class VkSessionStore(context: Context) {
     private val preferences = EncryptedSharedPreferences.create(
@@ -34,14 +36,25 @@ class VkSessionStore(context: Context) {
             .putString(KEY_COOKIE_P, session.cookieP)
             .putString(KEY_REMIX_SID, session.remixSid)
             .apply()
+        notifySessionChanged()
     }
 
-    fun clear() = preferences.edit().clear().apply()
+    fun clear() {
+        preferences.edit().clear().apply()
+        notifySessionChanged()
+    }
 
-    private companion object {
-        const val KEY_TOKEN = "access_token"
-        const val KEY_EXPIRES = "expires_at_seconds"
-        const val KEY_COOKIE_P = "cookie_p"
-        const val KEY_REMIX_SID = "remix_sid"
+    companion object {
+        private val _sessionRevision = MutableStateFlow(0L)
+        val sessionRevision = _sessionRevision.asStateFlow()
+
+        internal fun notifySessionChanged() {
+            _sessionRevision.value += 1L
+        }
+
+        private const val KEY_TOKEN = "access_token"
+        private const val KEY_EXPIRES = "expires_at_seconds"
+        private const val KEY_COOKIE_P = "cookie_p"
+        private const val KEY_REMIX_SID = "remix_sid"
     }
 }
