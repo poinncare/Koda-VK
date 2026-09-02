@@ -5,7 +5,9 @@ import com.ivor.ivormusic.util.KLog
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
@@ -79,6 +81,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 @UnstableApi
 class MusicService : MediaLibraryService() {
@@ -146,16 +149,65 @@ class MusicService : MediaLibraryService() {
     // Kept for warmStreamCache; playback wires the factory into the player
     // separately in initializePlayer.
     private var cacheDataSourceFactory: androidx.media3.datasource.cache.CacheDataSource.Factory? = null
+    private val vkRouteGeneration = AtomicLong(0L)
     private var currentDefaultNetwork: Network? = null
+    private var currentDefaultNetworkIsVpn: Boolean? = null
+    private var currentDefaultNetworkLink: String? = null
+    private var currentDefaultNetworkBlocked: Boolean? = null
+    private var networkChangeJob: Job? = null
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             val previous = currentDefaultNetwork
             currentDefaultNetwork = network
+            currentDefaultNetworkIsVpn = null
+            currentDefaultNetworkLink = null
+            currentDefaultNetworkBlocked = null
             if (previous != null && previous != network) {
-                serviceScope.launch { invalidateVkStreamsAfterNetworkChange() }
+                scheduleVkRouteRefresh("default network changed")
             }
         }
 
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            if (network != currentDefaultNetwork) return
+            val isVpn = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            val previous = currentDefaultNetworkIsVpn
+            currentDefaultNetworkIsVpn = isVpn
+            if (previous != null && previous != isVpn) {
+                scheduleVkRouteRefresh("VPN transport changed")
+            }
+        }
+
+        override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+            if (network != currentDefaultNetwork) return
+            val signature = buildString {
+                append(linkProperties.interfaceName)
+                append('|').append(linkProperties.dnsServers.joinToString())
+                append('|').append(linkProperties.routes.joinToString())
+            }
+            val previous = currentDefaultNetworkLink
+            currentDefaultNetworkLink = signature
+            if (previous != null && previous != signature) {
+                scheduleVkRouteRefresh("network route changed")
+            }
+        }
+
+        override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
+            if (network != currentDefaultNetwork) return
+            val previous = currentDefaultNetworkBlocked
+            currentDefaultNetworkBlocked = blocked
+            if (previous != null && previous != blocked) {
+                scheduleVkRouteRefresh("network blocking changed")
+            }
+        }
+
+        override fun onLost(network: Network) {
+            if (network != currentDefaultNetwork) return
+            currentDefaultNetwork = null
+            currentDefaultNetworkIsVpn = null
+            currentDefaultNetworkLink = null
+            currentDefaultNetworkBlocked = null
+            scheduleVkRouteRefresh("default network lost")
+        }
     }
 
     // Songs whose stream head has been (or is being) written into the disk
@@ -233,6 +285,8 @@ class MusicService : MediaLibraryService() {
         // Covers the maintained NewPipe extraction and the direct InnerTube
         // fallback; their individual requests are also bounded by OkHttp.
         private const val RESOLVE_TIMEOUT_MS = 20_000L
+        private const val MAX_VK_ROUTE_RESOLVE_ATTEMPTS = 3
+        private const val VK_ROUTE_SETTLE_DELAY_MS = 500L
         private const val PROFILE_TIMEOUT_MS = 30_000L
         private const val PLACEHOLDER_PREFIX = "https://placeholder.ivormusic/"
         private const val CACHED_PREFIX = "https://cached.ivormusic/"
@@ -1425,7 +1479,7 @@ class MusicService : MediaLibraryService() {
         return try {
             val result = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
                 if (videoId.startsWith("vk:")) {
-                    runCatching { vkMusicRepository.resolveStream(videoId) }
+                    resolveVkStreamForCurrentRoute(videoId)
                 } else {
                     youtubeRepository.getStreamUrl(videoId)
                 }
@@ -1446,6 +1500,22 @@ class MusicService : MediaLibraryService() {
             KLog.e(TAG, "Resolution: Exception for $videoId", e)
             buildMediaItemWithUri(originalItem, Uri.parse("error://exception/$videoId"))
         }
+    }
+
+    /**
+     * A VK URL resolved while Android is moving traffic onto or off a VPN may
+     * already be invalid by the time the API call completes. Resolve once more
+     * against the settled route instead of publishing that stale URL into the
+     * player or prefetch queue.
+     */
+    private suspend fun resolveVkStreamForCurrentRoute(videoId: String): Result<String?> {
+        repeat(MAX_VK_ROUTE_RESOLVE_ATTEMPTS) {
+            val generation = vkRouteGeneration.get()
+            val result = runCatching { vkMusicRepository.resolveStream(videoId) }
+            if (generation == vkRouteGeneration.get()) return result
+            KLog.i(TAG, "VK route changed during resolution for $videoId; resolving again")
+        }
+        return Result.failure(java.io.IOException("Network route did not settle while resolving VK stream"))
     }
 
     private fun buildMediaItemWithUri(original: MediaItem, uri: Uri, duration: Long? = null): MediaItem {
@@ -1611,14 +1681,25 @@ class MusicService : MediaLibraryService() {
         if (reset > 0) KLog.d(TAG, "Recovery: reset $reset queued item(s) for re-resolution")
     }
 
+    private fun scheduleVkRouteRefresh(reason: String) {
+        vkRouteGeneration.incrementAndGet()
+        networkChangeJob?.cancel()
+        networkChangeJob = serviceScope.launch {
+            // Connectivity callbacks for one switch arrive as a short burst
+            // (available, capabilities, link properties). Refresh once after
+            // Android has installed the final route.
+            delay(VK_ROUTE_SETTLE_DELAY_MS)
+            invalidateVkStreamsAfterNetworkChange(reason)
+        }
+    }
+
     /**
      * VK CDN links can be coupled to the network route that resolved them.
      * Switching a VPN changes that route while the queue still contains the
-     * old links, so forget every queued VK URL before it becomes the next
-     * track. The playing item is allowed to finish; if it cannot, the normal
-     * source-error retry resolves it again on the new network.
+     * old links, so forget every queued VK URL and immediately re-resolve the
+     * playing item on the settled route while preserving its position.
      */
-    private fun invalidateVkStreamsAfterNetworkChange() {
+    private fun invalidateVkStreamsAfterNetworkChange(reason: String) {
         val ids = buildSet {
             addAll(uriCache.keys.filter { it.startsWith("vk:") })
             for (index in 0 until player.mediaItemCount) {
@@ -1637,20 +1718,31 @@ class MusicService : MediaLibraryService() {
         }
 
         val playingIndex = player.currentMediaItemIndex
+        val resumePosition = player.currentPosition.coerceAtLeast(0L)
+        val wasPlayWhenReady = player.playWhenReady
+        var refreshedCurrent: MediaItem? = null
         var reset = 0
         for (index in 0 until player.mediaItemCount) {
-            if (index == playingIndex) continue
             val item = player.getMediaItemAt(index)
             if (!item.mediaId.startsWith("vk:")) continue
             val uri = item.localConfiguration?.uri ?: continue
             if (uri.scheme != "http" && uri.scheme != "https") continue
+            val placeholder = item.buildUpon()
+                .setUri("$PLACEHOLDER_PREFIX${item.mediaId}")
+                .build()
             player.replaceMediaItem(
                 index,
-                item.buildUpon().setUri("$PLACEHOLDER_PREFIX${item.mediaId}").build(),
+                placeholder,
             )
+            if (index == playingIndex) refreshedCurrent = placeholder
             reset++
         }
-        KLog.i(TAG, "Network changed: invalidated ${ids.size} VK stream(s), reset $reset queued item(s)")
+        refreshedCurrent?.let { placeholder ->
+            if (resumePosition > 0L) player.seekTo(playingIndex, resumePosition)
+            player.playWhenReady = wasPlayWhenReady
+            validateAndPlayCurrentItem(placeholder)
+        }
+        KLog.i(TAG, "$reason: invalidated ${ids.size} VK stream(s), reset $reset queued item(s)")
     }
 
     /**

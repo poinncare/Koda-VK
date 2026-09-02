@@ -30,10 +30,9 @@ android {
         // platform did not gain until API 33.
         minSdk = 30
         targetSdk = 36
-        // Keep versionCode monotonic so this 1.0.0 re-release can update an
-        // installed 1.0.1/1.0.2 APK even though the public version was reset.
-        versionCode = 5
-        versionName = "1.0.0"
+        // Keep versionCode monotonic across the earlier public-version reset.
+        versionCode = 6
+        versionName = "1.0.1"
         manifestPlaceholders["appLabel"] = "@string/app_name"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

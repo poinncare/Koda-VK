@@ -69,7 +69,9 @@ class ChunkedStreamDataSource private constructor(
             val host = value?.lowercase().orEmpty()
             return host == "vk.com" || host == "vk.ru" ||
                 host.endsWith(".vk.com") || host.endsWith(".vk.ru") ||
-                host.endsWith(".vkuseraudio.net") || host.endsWith(".useraudio.net") ||
+                host.endsWith(".vkuseraudio.net") || host.endsWith(".vkuseraudio.com") ||
+                host.endsWith(".vkuseraudio.ru") || host.endsWith(".useraudio.net") ||
+                host.endsWith(".userapi.com") ||
                 host.endsWith(".vk-cdn.net")
         }
 
